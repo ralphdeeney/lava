@@ -1,0 +1,47 @@
+name: InstaBox Phase 00
+on:
+  push:
+    branches: [main, feat/phase-00-foundation]
+  workflow_dispatch:
+    inputs:
+      allow_resume:
+        description: Authorize resuming a manually paused free-tier development VM
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: lava-instabox-agent-development
+  cancel-in-progress: false
+jobs:
+  integration:
+    if: github.repository == 'ralphdeeney/lava'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run authenticated exact-commit VM gate
+        env:
+          INSTABOX_API_KEY: ${{ secrets.INSTABOX_API_KEY }}
+          INSTABOX_MACHINE_ID: ${{ secrets.INSTABOX_MACHINE_ID }}
+          LAVA_COMMIT: ${{ github.sha }}
+          LAVA_RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+          LAVA_RESUME: ${{ inputs.allow_resume || false }}
+        run: |
+          arguments=()
+          if [[ "$LAVA_RESUME" == true ]]; then arguments+=(--allow-resume); fi
+          python3 scripts/instabox_ci.py --commit "$LAVA_COMMIT" --run-id "$LAVA_RUN" \
+            --evidence-dir "$RUNNER_TEMP/instabox-evidence" "${arguments[@]}"
+      - name: Publish bounded sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: instabox-phase00-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/instabox-evidence/result.json
+            ${{ runner.temp }}/instabox-evidence/diagnostics.log
+          if-no-files-found: warn
+          retention-days: 7
