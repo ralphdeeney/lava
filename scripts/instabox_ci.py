@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import shlex
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -172,13 +173,15 @@ class Client:
                 op_id = operation.get("id")
                 if not op_id:
                     raise RuntimeError("Resume returned no operation identity")
-                self.call(
+                outcome = self.call(
                     "GET",
                     "/v1/operations/"
                     + urllib.parse.quote(op_id, safe="")
                     + "?wait=25s",
                     safe=True,
                 )
+                if outcome.get("state") == "failed":
+                    raise RuntimeError("Authorized resume operation failed")
             elif machine.get("state") in ("starting", "resuming"):
                 time.sleep(5)
             else:
@@ -293,6 +296,9 @@ def main() -> int:
         if state in ("succeeded", "failed"):
             diagnostics = result.pop("diagnostics", "")
             result["observedMachine"] = machine["name"]
+            result["pytestPassedCounts"] = [
+                int(count) for count in re.findall(r"\b(\d+) passed\b", diagnostics)
+            ]
             if result.get("commit") != args.commit:
                 raise RuntimeError("Remote evidence does not match intended commit")
             safe_log = redact(diagnostics, [client.key]).encode()[-65536:]
@@ -313,5 +319,23 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as error:
         # Errors expose codes and phases only; never HTTP bodies or secret-bearing commands.
-        print(f"InstaBox gate failed: {type(error).__name__}: {error}")
+        message = f"InstaBox gate failed: {type(error).__name__}: {error}"
+        print(message)
+        # Retain a sanitized failure result even when account/preflight checks stop execution.
+        if "--evidence-dir" in sys.argv:
+            directory = Path(sys.argv[sys.argv.index("--evidence-dir") + 1])
+            directory.mkdir(parents=True, exist_ok=True)
+            result_file = directory / "result.json"
+            if not result_file.exists():
+                result_file.write_text(
+                    json.dumps(
+                        {
+                            "state": "failed",
+                            "exitCode": 1,
+                            "phase": "orchestration",
+                            "error": message,
+                        }
+                    )
+                )
+                result_file.chmod(0o600)
         raise SystemExit(1) from None

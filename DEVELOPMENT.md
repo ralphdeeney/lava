@@ -131,3 +131,56 @@ The destructive pytest migration suite additionally requires `LAVA_TEST_DATABASE
 and a database name ending in `_test`; these checks precede all migration commands. This is
 an explicit acknowledgement, not proof that an arbitrary database is safe. Use only a new,
 disposable database. Regular migration `upgrade head` remains non-destructive and repeatable.
+
+## GitHub Actions → InstaBox (no interactive SSH)
+
+`InstaBox Phase 00` runs on trusted pushes to main and the Phase 00 feature branch, or by
+workflow dispatch. It uses repository secrets `INSTABOX_API_KEY` and `INSTABOX_MACHINE_ID`.
+The API key needs `machines:write` (which includes read access); no delete, image, billing or admin
+scope is used. Untrusted pull-request events do not receive these secrets. The key is sent
+only in an HTTPS header to the fixed `https://api.instabox.sh` origin; redirects are refused.
+Neither the API key nor GitHub credentials are forwarded to the VM.
+
+The runner checks machine name, explicit free-tier status, readiness, operation state, runtime
+cap and cooldown before execution. It never creates machines, changes plans, grows disks,
+modifies Docker storage, publishes VM ports or bypasses lifecycle restrictions. A normally
+running machine needs no lifecycle change. Idle suspension uses the documented wake route;
+manually paused machines need the workflow's explicit `allow_resume` input. Stopped machines
+and billed/unknown-price machines fail closed. Resume uses a stable idempotency key and polls
+the returned operation. 401/402/403 and cooldown/account restrictions are not retried away.
+
+The Actions checkout is fetched with full Git history and without retained GitHub credentials.
+A Git bundle is transferred through API exec stdin, cloned under the newly allocated
+`/data/lava-ci/runs/<run-id>-<attempt>/checkout`, and checked out detached at the full intended
+SHA. Existing operator checkouts are untouched. The API stdin limit is enforced; oversized
+bundles fail rather than using an unverified transfer path.
+
+A bounded VM worker runs bootstrap, the complete PostgreSQL-backed pytest suite and the
+real disposable Compose verifier. GitHub concurrency and a VM flock serialize infrastructure
+runs. Package caches and Docker data stay on /data; the existing daemon configuration is only
+inspected. Diagnostics are redacted, private and at most 64 KiB; exact commit, step completion
+and exit code are published as a seven-day Actions artifact. The source bundle, disposable
+checkout (including .env), test DB and run-owned Compose resources are cleaned up. Operator
+services/volumes and shared package caches are preserved.
+
+The API's exec endpoint is not idempotent. Unknown launch responses are reconciled by reading
+the owned run's status; they are never blindly replayed. Read-only polling and explicitly
+retryable rejections have bounded retries, with Retry-After honored within the retry budget.
+The API request timeout is 60 seconds per command, VM job deadline 20 minutes and Actions job
+deadline 30 minutes. A background worker is used so legitimate builds do not exceed the API's
+600-second execution cap. SIGTERM/timeouts trigger scoped cleanup; host failure/SIGKILL may
+require inspecting the named run and its lock before recovery, never global pruning.
+
+An API acceptance response or a mocked protocol test is not VM integration evidence. Only a
+terminal, zero-exit result for the exact SHA, with completed required steps and successful
+cleanup, satisfies the automated VM gate. Inspect both `Phase 00` and `InstaBox Phase 00`
+checks on the PR before merging. Phase 01 remains blocked until that merge is authorized.
+
+
+The implementation was checked against the live official `/v1/openapi.json` contract (API
+version 1.0.0) through Actions. Cloud egress does not need direct VM/SSH access. Required API
+fields, exec stdin/timeout limits and non-idempotent replay semantics come from that contract.
+The first real automated gate succeeded at commit
+`8f00d9af1abd3c28b71d2dcc7f2b5736b039fa1d`:
+https://github.com/ralphdeeney/lava/actions/runs/40111964466 . Subsequent changes must pass
+both workflows for their own SHA; never substitute this historical run for current evidence.

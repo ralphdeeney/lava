@@ -92,3 +92,43 @@ The remaining test portability issue was isolated to the simulated startup-failu
 it inherited the test runner filesystem's free space. That test now mocks disk capacity to
 8 GiB free, allowing it to exercise startup failure, scoped cleanup and log redaction on
 small runners. The actual verifier's 4 GiB minimum is unchanged.
+
+
+## Automated Actions → InstaBox gate
+
+The fixture capacity fix was pushed as `549742510e40dccf739a3bcae76b08d22b26f578`;
+its complete local suite passed (17 tests), as did both GitHub CI events. The real verifier
+still requires 4 GiB free. That fixture's filesystem capacity is mocked only within the test.
+
+The official live API contract was obtained through GitHub Actions. Both required secret
+bindings were confirmed present without reading their values. Authenticated metadata confirmed
+`agent-development` was running and ready. The new automation requires the API's explicit
+free-tier flag and never changes billing, storage, machine size, runtime caps or account limits.
+
+At `8f00d9af1abd3c28b71d2dcc7f2b5736b039fa1d`, all workflows passed:
+
+- [Real InstaBox API integration](https://github.com/ralphdeeney/lava/actions/runs/40111964466)
+- [Push CI](https://github.com/ralphdeeney/lava/actions/runs/40111964445)
+- [PR CI](https://github.com/ralphdeeney/lava/actions/runs/40111966780)
+
+The real VM worker's terminal result identified that exact commit and reported `succeeded`,
+exit code 0, with all these completed steps: exact commit verification; storage/prerequisites;
+bootstrap/lint/unit/frontend; complete PostgreSQL-backed pytest; Compose integration; owned
+resource cleanup. A bounded sanitized artifact was successfully published:
+https://github.com/ralphdeeney/lava/actions/runs/40111964466/artifacts/12566777135 .
+This is actual authenticated VM execution, not the protocol mocks. Raw artifact downloading
+from the agent's cloud network may be restricted; authenticated run results and logs were read.
+
+The follow-up adds environment observations to the retained result (Docker data-root, free
+/data capacity, Python, Node and Compose versions), fails immediately on a failed resume
+operation, and extracts test pass counts without dumping raw diagnostics to Actions logs.
+The final local suite passed 33 tests with no skips or warnings (5.37 seconds), and the
+separate repeat PostgreSQL integration test passed again (4.66 seconds). Ruff, Svelte checks
+(0 errors/warnings) and the production build passed. Current
+HEAD results, counts, SHA and workflow URLs are published in PR #1 and the final release
+report; historical links above are explicitly scoped to the tested commit.
+
+AGENTS.md now requires small slices, automated diagnosis, unit/integration/Actions verification,
+accurate evidence, reproducible setup, credential safety and bounded rollback/recovery.
+ROADMAP.md contains Phase 01 tasks only. Phase 01 implementation remains forbidden until
+Phase 00 is merged; this task does not merge or modify persistent infrastructure.

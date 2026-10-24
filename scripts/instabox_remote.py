@@ -136,6 +136,17 @@ def main() -> int:
         actual = step("exact_commit", ["git", "rev-parse", "HEAD"])
         if actual != args.commit:
             raise RuntimeError("Checkout does not match requested commit")
+        status["environment"] = {
+            "dockerRoot": command(["docker", "info", "--format", "{{.DockerRootDir}}"]),
+            "dataFreeMiB": shutil.disk_usage("/data").free // 1024**2,
+            "python": sys.version.split()[0],
+            "node": command(["node", "--version"]),
+            "compose": command(["docker", "compose", "version", "--short"]),
+        }
+        if status["environment"]["dockerRoot"] != "/data/docker":
+            raise RuntimeError(
+                "Unexpected Docker data-root; no storage changes attempted"
+            )
         step(
             "storage_and_prerequisites",
             ["python3", "scripts/verify_instabox.py", "--preflight-only"],

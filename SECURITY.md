@@ -31,3 +31,11 @@ service password is a test-only fixture for an isolated, loopback-bound runner d
 credential to any persistent environment. No administrative/destructive HTTP endpoint exists.
 The development database owner remains intentionally broad; production role separation and
 public authentication are still prerequisites before Internet exposure.
+
+The InstaBox workflow accepts secrets only on trusted branch pushes/manual dispatch, never
+pull_request_target. Its fixed API origin, no-redirect policy, free-tier guard, serialized
+execution and exact-SHA Git bundle prevent credential forwarding, accidental billing, competing
+runs and stale-source claims. Do not expand the API key beyond machines read/write for this
+gate. Remote test execution intentionally runs trusted repository code; anyone who can push
+those trusted branches must already be trusted to use the development VM. Resource cleanup
+is limited to the newly allocated run's checkout, test DB and deterministic Compose project.

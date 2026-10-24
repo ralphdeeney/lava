@@ -166,3 +166,21 @@ def test_remote_result_cannot_be_misreported_as_success(monkeypatch, changes):
 def test_api_redirect_cannot_forward_authentication():
     with pytest.raises(RuntimeError, match="redirects are refused"):
         api.NoRedirect().redirect_request(None, None, 302, "", {}, "https://other.example")
+
+
+def test_failed_resume_operation_is_not_retried(monkeypatch):
+    instance = client()
+    calls = []
+
+    def call(method, path, *args, **kwargs):
+        calls.append(path)
+        if path.endswith("/resume"):
+            return {"id": "op_failed"}
+        if "/operations/" in path:
+            return {"state": "failed"}
+        return {"name": "agent-development", "free": True, "state": "suspended"}
+
+    monkeypatch.setattr(instance, "call", call)
+    with pytest.raises(RuntimeError, match="Authorized resume operation failed"):
+        instance.ready(allow_resume=True, run_id="123-1")
+    assert sum(path.endswith("/resume") for path in calls) == 1
