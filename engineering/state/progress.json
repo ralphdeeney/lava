@@ -60,19 +60,15 @@
   },
   "blockers": [
     {
-      "type": "external_account",
-      "message": "Private repository rulesets require GitHub Pro or public visibility. Repository remains private; no plan purchase authorized."
-    },
-    {
       "type": "external_authorization",
-      "message": "Branch protection GET/PUT returned403 Resource not accessible by integration; main protected=false."
+      "message": "Public visibility resolved account eligibility, but branch-protection access and REST/GraphQL creation are still denied to this integration. Administration read/write or owner-applied verified rules are required."
     },
     {
       "type": "security_prerequisite",
       "message": "No protected-main trusted execution/merge controller; existing Phase00 VM runner must not approve arbitrary Phase01 candidates."
     }
   ],
-  "next_authorized_action": "Verify eligible private-repository main protection and integration permissions; configure proven gates before product01.1. No direct merge workaround.",
+  "next_authorized_action": "Verify an authorized Administration-capable connection or owner-applied main policy. Configure trusted security/integration/evaluation gates before finalizing PR2. No direct merge or untrusted secret-bearing job.",
   "phase01_slices": {
     "01.1": "NOT_STARTED_DEPENDENCY_BLOCKED",
     "01.2": "NOT_STARTED_DEPENDENCY_BLOCKED",
@@ -83,5 +79,28 @@
     "01.7": "NOT_STARTED_DEPENDENCY_BLOCKED",
     "01.8": "NOT_STARTED_DEPENDENCY_BLOCKED"
   },
-  "phase02_ready": false
+  "phase02_ready": false,
+  "repository_visibility": "public",
+  "public_resumption": {
+    "source_commit": "47595bf617a3e50b26735d5dab675ecff96660f9",
+    "visibility_restriction_resolved": true,
+    "main_protected": false,
+    "auto_merge_enabled": false,
+    "administration_attempts": [
+      {
+        "mechanism": "REST branch protection read",
+        "status": 403,
+        "result": "Resource not accessible by integration"
+      },
+      {
+        "mechanism": "REST repository ruleset creation",
+        "status": 403,
+        "result": "Resource not accessible by integration"
+      },
+      {
+        "mechanism": "GraphQL createBranchProtectionRule",
+        "result": "FORBIDDEN: Resource not accessible by integration"
+      }
+    ]
+  }
 }

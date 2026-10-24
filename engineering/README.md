@@ -18,10 +18,11 @@ secured persistent runner. GitHub Actions only runs submitted code; it does not 
 implement the next slice. No background coding, protected-main controller or automatic merge
 is claimed active.
 
-Current blocker: main is unprotected; branch-protection read/write returns403, and private-repo
-rulesets return the GitHub Pro/public visibility restriction. Auto-merge remains disabled.
-Do not use a direct merge script, make the repository public, purchase a plan, or merge any
-Phase 01 slice to work around this restriction. The prepared existing-check protection payload
+Current blocker after the owner made the repository public: main is still unprotected.
+The plan/visibility restriction is resolved, but branch-protection access and supported REST
+ruleset creation/GraphQL branch-protection creation remain forbidden to this integration.
+Auto-merge remains disabled. Do not use a direct merge script, substitute an Actions token
+for repository-administration permission, or merge a Phase01 slice around this restriction. The prepared existing-check protection payload
 is only an initial baseline; actual executed Phase 01 security/browser/eval check names must
 be discovered and required before those slices can qualify.
 
@@ -54,3 +55,27 @@ names (`checks`, `integration`, GitHub Actions app15368), strict status updates,
 enforcement, linear history and no force push/deletion. The PUT attempt failed403; this file
 is not applied configuration and is insufficient for Phase01 without subsequently executed
 security/browser/evaluation checks and a trusted controller. Auto-merge was not enabled.
+
+
+## Public-repository resumption
+
+`state/policy-observation.json` records the new public-repository observations and the denied
+REST/GraphQL administration attempts. The former private-plan observation is retained in
+`state/policy-observation-before-public.json` as historical evidence. `viewerCanAdminister=true`
+and repo permissions.admin=true report the user's role; they do not grant missing GitHub
+integration permissions. The only available credential is the existing GH_TOKEN connection;
+no alternate administrator identity was found, and no credential was printed or extracted.
+
+`main-ruleset.proposed.json` is a supported REST alternative to branch protection; it has no
+bypass actors and binds known check contexts to the GitHub Actions app. The existing-check
+proposals are fail-closed baselines, not completed Phase01 security policy. A relevant exact-head
+integration check is still necessary for PR2; historical main checks cannot satisfy it.
+Actual security/browser/evaluation checks must be implemented, executed and discovered before
+being required. Never fabricate successful check names or authorize a candidate's self-report.
+
+`native-auto-merge.proposed.json` is the supported repository-settings payload for native
+squash auto-merge. It was deliberately not applied while protection could not be verified.
+The owner can approve an Administration read/write-capable GitHub connection, or use GitHub
+Settings to install the policy and enable squash auto-merge. Neither action requires sharing
+credentials in chat. Future ordinary tests still use Actions/API automation without SSH;
+this exceptional repository-authorization step cannot be supplied by application code.

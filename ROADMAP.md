@@ -38,6 +38,6 @@ PR #1 is merged. The current authorized sequence is01.1 domain schema;01.2 sessi
 metadata/state machine;01.7 real dashboard/browser journeys;01.8 security/acceptance hardening.
 No customer containers, build engine execution or networking adapters are authorized here.
 Before01.1, protected auto-merge must be configured and verified. That prerequisite is BLOCKED:
-main is currently unprotected, the integration cannot manage protection, and private rulesets
-are unavailable on the current account. Preserve draft work and do not use direct merges.
+main is currently unprotected and the integration cannot manage protection. Public visibility
+has resolved ruleset eligibility, but both supported REST/GraphQL mutation routes remain denied. Preserve draft work and do not use direct merges.
 See engineering/state/progress.json for the durable checkpoint and exact acceptance status.
