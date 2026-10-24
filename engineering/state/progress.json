@@ -16,7 +16,7 @@
     "merge_commit": "284547ce6fc7ae69f5633262831981c25fefcd8c"
   },
   "pr_url": "https://github.com/ralphdeeney/lava/pull/2",
-  "merge_state": "DRAFT_BLOCKED_UNMERGED",
+  "merge_state": "OPEN_READY_FOR_REVIEW_BLOCKED_UNMERGED",
   "auto_merge_enabled": false,
   "verification": {
     "local_full_suite": {
@@ -61,14 +61,14 @@
   "blockers": [
     {
       "type": "external_authorization",
-      "message": "Public visibility resolved account eligibility, but branch-protection access and REST/GraphQL creation are still denied to this integration. Administration read/write or owner-applied verified rules are required."
+      "message": "Ruleset25796131 exists with no bypass actors, but required_status_checks is empty and strict updates false. Supported PUT correction denied403. Repository native auto-merge enabled; PR auto-merge withheld until checks enforced."
     },
     {
       "type": "security_prerequisite",
       "message": "No protected-main trusted execution/merge controller; existing Phase00 VM runner must not approve arbitrary Phase01 candidates."
     }
   ],
-  "next_authorized_action": "Verify an authorized Administration-capable connection or owner-applied main policy. Configure trusted security/integration/evaluation gates before finalizing PR2. No direct merge or untrusted secret-bearing job.",
+  "next_authorized_action": "Require actual CI contexts in active ruleset via approved Administration-capable connection or owner settings, verify trusted integration/security gates, then enable PR2 squash auto-merge. Product slices remain blocked until actual merge.",
   "phase01_slices": {
     "01.1": "NOT_STARTED_DEPENDENCY_BLOCKED",
     "01.2": "NOT_STARTED_DEPENDENCY_BLOCKED",
@@ -102,5 +102,15 @@
         "result": "FORBIDDEN: Resource not accessible by integration"
       }
     ]
+  },
+  "repository_auto_merge_enabled": true,
+  "ruleset_resumption": {
+    "source_commit": "01f9fac65918af9915fc291a2650a4bc8642f587",
+    "ruleset_id": 25796131,
+    "required_status_checks": [],
+    "native_auto_merge_enabled": true,
+    "pr_ready_for_review": true,
+    "ruleset_update_status": 403,
+    "new_code_repairs": 0
   }
 }

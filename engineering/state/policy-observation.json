@@ -1,8 +1,8 @@
 {
   "repository": "ralphdeeney/lava",
   "private": false,
-  "auto_merge_enabled": false,
-  "main_protected": false,
+  "auto_merge_enabled": true,
+  "main_protected": true,
   "protection_verified": false,
   "errors": {
     "repository": null,
@@ -13,7 +13,9 @@
   "protected_automerge_ready": false,
   "metadata_only": true,
   "blockers": [
-    "Read-only metadata probe: no verified protected merge controller is active"
+    "Active ruleset has zero required status checks: CI/security/integration/evaluation are not enforced.",
+    "Ruleset update denied403; approved Administration read/write connection or owner configuration required.",
+    "No verified protected privileged execution/merge controller."
   ],
   "administration_attempts": [
     {
@@ -29,9 +31,23 @@
     {
       "mechanism": "GraphQL createBranchProtectionRule",
       "result": "FORBIDDEN: Resource not accessible by integration"
+    },
+    {
+      "mechanism": "REST update existing ruleset 25796131",
+      "status": 403,
+      "result": "Resource not accessible by integration"
     }
   ],
-  "rulesets_observed": [],
+  "rulesets_observed": [
+    {
+      "id": 25796131,
+      "name": "LAVA Main Protection",
+      "enforcement": "active",
+      "bypass_actors": [],
+      "required_status_checks": [],
+      "strict_required_status_checks_policy": false
+    }
+  ],
   "visibility_restriction_resolved": true,
   "alternate_admin_connection": "none configured; current GH_TOKEN account only",
   "supported_next_step": "Owner grants repository Administration read/write to an approved GitHub connection, or applies rules in GitHub Settings; no credentials in chat."

@@ -18,13 +18,15 @@ secured persistent runner. GitHub Actions only runs submitted code; it does not 
 implement the next slice. No background coding, protected-main controller or automatic merge
 is claimed active.
 
-Current blocker after the owner made the repository public: main is still unprotected.
-The plan/visibility restriction is resolved, but branch-protection access and supported REST
-ruleset creation/GraphQL branch-protection creation remain forbidden to this integration.
-Auto-merge remains disabled. Do not use a direct merge script, substitute an Actions token
-for repository-administration permission, or merge a Phase01 slice around this restriction. The prepared existing-check protection payload
-is only an initial baseline; actual executed Phase 01 security/browser/eval check names must
-be discovered and required before those slices can qualify.
+Current blocker after owner configuration: main has active ruleset25796131 and native
+repository auto-merge is enabled. However, the ruleset's required_status_checks list is
+empty and strict_required_status_checks_policy is false. CI is not enforced. There are
+no bypass actors, but this does not compensate for absent required checks. Supported
+REST PUT of the prepared baseline to this existing ruleset returned403, Resource not
+accessible by integration. PR2 is ready for review; PR auto-merge remains withheld.
+An Administration read/write-capable connection or owner settings change is still required.
+Do not merge around this gap. The prepared existing-check payload is only a baseline;
+Phase01 needs independently verified security/browser/evaluation and trusted integration gates.
 
 A privileged controller must run from protected main/pinned trusted code, never from the PR
 checkout while holding infrastructure credentials. Candidate VM tests require independent
