@@ -1,44 +1,47 @@
-name: InstaBox contract preflight
+name: InstaBox Phase 00
 on:
   push:
-    branches: [feat/phase-00-foundation]
-    paths: [.github/workflows/instabox.yml]
+    branches: [main, feat/phase-00-foundation]
   workflow_dispatch:
+    inputs:
+      allow_resume:
+        description: Authorize resuming a manually paused free-tier development VM
+        type: boolean
+        default: false
 permissions:
   contents: read
+concurrency:
+  group: lava-instabox-agent-development
+  cancel-in-progress: false
 jobs:
-  contract:
+  integration:
+    if: github.repository == 'ralphdeeney/lava'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 30
     steps:
-      - name: Inspect public API contract and required secret presence
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run authenticated exact-commit VM gate
         env:
           INSTABOX_API_KEY: ${{ secrets.INSTABOX_API_KEY }}
           INSTABOX_MACHINE_ID: ${{ secrets.INSTABOX_MACHINE_ID }}
+          LAVA_COMMIT: ${{ github.sha }}
+          LAVA_RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+          LAVA_RESUME: ${{ inputs.allow_resume || false }}
         run: |
-          python3 - <<'PY'
-          import json, os, urllib.request, urllib.parse
-          for name in ('INSTABOX_API_KEY', 'INSTABOX_MACHINE_ID'):
-              print(f'{name}: {"configured" if os.environ.get(name) else "missing"}')
-          with urllib.request.urlopen('https://api.instabox.sh/v1/openapi.json', timeout=30) as response:
-              contract = json.load(response)
-          print('API_INFO', json.dumps(contract.get('info')))
-          print('SECURITY_SCHEMES', json.dumps(contract.get('components', {}).get('securitySchemes')))
-          for path, methods in contract.get('paths', {}).items():
-              if any(term in path for term in ('exec', 'resume', 'wake', 'operation', '/machines', '/me', '/usage')):
-                  print('API_PATH', path, json.dumps(methods))
-          print('COMPONENT_KEYS', list(contract.get('components', {})))
-          for name, schema in contract.get('components', {}).get('schemas', {}).items():
-              if name in ('ExecRequest', 'ExecResult', 'Machine', 'Operation', 'Me', 'Usage', 'MachineRuntime', 'MachineStatus'):
-                  print('API_SCHEMA', name, json.dumps(schema))
-          key = os.environ.get('INSTABOX_API_KEY')
-          machine = os.environ.get('INSTABOX_MACHINE_ID')
-          if key and machine:
-              for path in ('/v1/me', '/v1/machines/' + urllib.parse.quote(machine, safe='')):
-                  request = urllib.request.Request('https://api.instabox.sh' + path, headers={'X-API-Key': key})
-                  with urllib.request.urlopen(request, timeout=30) as response:
-                      result = json.load(response)
-                  # Only safe machine/lifecycle/account metadata; no identities or credentials.
-                  fields = ('name', 'state', 'status', 'runtime', 'operationId', 'cooldownUntil', 'suspendReason', 'plan', 'activated', 'inviteRequired', 'billing')
-                  print('LIVE_METADATA', json.dumps({k: result[k] for k in fields if k in result}))
-          PY
+          arguments=()
+          if [[ "$LAVA_RESUME" == true ]]; then arguments+=(--allow-resume); fi
+          python3 scripts/instabox_ci.py --commit "$LAVA_COMMIT" --run-id "$LAVA_RUN" \
+            --evidence-dir "$RUNNER_TEMP/instabox-evidence" "${arguments[@]}"
+      - name: Publish bounded sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: instabox-phase00-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/instabox-evidence/result.json
+            ${{ runner.temp }}/instabox-evidence/diagnostics.log
+          if-no-files-found: warn
+          retention-days: 7

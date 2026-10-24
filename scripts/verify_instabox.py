@@ -81,7 +81,12 @@ def main() -> int:
         "--cloud", action="store_true", help="Use the managed-cloud CA build override"
     )
     parser.add_argument("--preflight-only", action="store_true")
+    parser.add_argument(
+        "--project", help="Owned disposable project identifier for CI recovery"
+    )
     args = parser.parse_args()
+    if args.project and not re.fullmatch(r"lava-verify-[0-9a-f]{12}", args.project):
+        raise RuntimeError("Invalid disposable verification project")
     os.umask(0o077)
 
     def interrupted(signum, frame):
@@ -195,7 +200,7 @@ def main() -> int:
         )
         return 0
 
-    project = "lava-verify-" + secrets.token_hex(6)
+    project = args.project or "lava-verify-" + secrets.token_hex(6)
     password = secrets.token_hex(24)
     credentials.append(password)
     envfile = run_dir / "compose.env"
