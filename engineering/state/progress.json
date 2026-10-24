@@ -4,7 +4,7 @@
   "slice": "01.1",
   "branch": "feat/phase01-slice01-control-plane",
   "base_commit": "aae350a6cf2ed10bea09f9ec4aa3075ae038d0a8",
-  "implementation_status": "REPAIR",
+  "implementation_status": "VERIFIED_LOCAL_AWAITING_CI",
   "repair_attempts": 1,
   "prior_pipeline_repair_attempts": 1,
   "slice_record": "engineering/state/slice01.1.json",
@@ -31,5 +31,18 @@
   "persistent_coding_runner": "unavailable/not provisioned",
   "background_coding_active": false,
   "next_slice": "01.2 not started; requires01.1 verified and merged",
-  "phase02_ready": false
+  "phase02_ready": false,
+  "verified_code_commit": "d5e051183db62abc315ea6c11c16aff6506b73ee",
+  "verification": {
+    "full_suite": {
+      "passed": 203,
+      "failed": 0,
+      "skipped": 0
+    },
+    "applicable_evals_passed": 9,
+    "phase_evals_not_run": 11,
+    "security_blocking_findings": 0,
+    "compose": "passed",
+    "instabox": "not_run for candidate; trusted-main merge-commit run pending"
+  }
 }

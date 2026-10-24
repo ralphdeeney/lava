@@ -5,7 +5,7 @@
   "scope": "User-authorized Projects, Services, Ownership and Authorization control-plane API; supersedes schema-only slice",
   "branch": "feat/phase01-slice01-control-plane",
   "base_commit": "aae350a6cf2ed10bea09f9ec4aa3075ae038d0a8",
-  "status": "REPAIR",
+  "status": "VERIFIED_LOCAL_AWAITING_CI",
   "repair_attempts": 1,
   "prior_pipeline_repair_attempts": 1,
   "verification_runs": [
@@ -36,13 +36,52 @@
         "lossy downgrade accepted edited legacy description",
         "lossy downgrade accepted archived legacy lifecycle"
       ]
+    },
+    {
+      "stage": "single_retest",
+      "source_commit": "d5e051183db62abc315ea6c11c16aff6506b73ee",
+      "clean_source_attribution": true,
+      "full_suite": {
+        "passed": 203,
+        "failed": 0,
+        "skipped": 0
+      },
+      "security_cases": {
+        "passed": 23,
+        "failed": 0
+      },
+      "ruff": "passed",
+      "format": "passed",
+      "svelte": "0 errors, 0 warnings",
+      "frontend_build": "passed",
+      "compose": "passed; HTTP/PostgreSQL/repeat migrations/schema/non-root/scoped teardown",
+      "evaluations": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0,
+        "not_run": 11,
+        "slice_eligible": true,
+        "phase_release_ready": false
+      },
+      "junit_sha256": "9fc2659948c756764cbaaf6f9d4a0c22b6212a67f6bb2e123dfb57da4a6b2978"
     }
   ],
   "pr_url": null,
-  "merge_state": "NOT_OPENED",
+  "merge_state": "Awaiting exact-head enforced CI and PR review; live state must be verified with GitHub",
   "instabox": "not_run; candidate credential-bearing dispatch prohibited; observe trusted main workflow only after independently reviewed merge",
   "background_coding_active": false,
   "next_slice": "01.2 blocked until this slice verified and merged",
   "diagnosis": "Merge nested PATCH resource fields, refuse edited legacy metadata downgrade, declare actual OpenAPI error envelope, preserve credential-safe diagnostic patch and format/import-sort without changing assertions.",
-  "next_action": "Exactly one clean-commit full retest. Any remaining failure blocks slice and dependent work."
+  "next_action": "Open PR, verify exact-head CI, publish independent review, native squash auto-merge if eligible; observe actual trusted-main InstaBox run for merge SHA. Do not start01.2.",
+  "verified_code_commit": "d5e051183db62abc315ea6c11c16aff6506b73ee",
+  "security_review": {
+    "role": "independent native security specialist",
+    "source_commit": "d5e051183db62abc315ea6c11c16aff6506b73ee",
+    "blocking_findings": 0,
+    "evidence_reviewed": true,
+    "tests_executed_by_reviewer": 0
+  },
+  "architecture_review": "passed independent static retest",
+  "browser": "not_run; frontend/browser account flows are outside this API slice",
+  "live_state_command": "gh pr view feat/phase01-slice01-control-plane --json url,state,mergeCommit,statusCheckRollup"
 }
