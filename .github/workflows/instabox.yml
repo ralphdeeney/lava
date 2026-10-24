@@ -1,0 +1,31 @@
+name: InstaBox contract preflight
+on:
+  push:
+    branches: [feat/phase-00-foundation]
+    paths: [.github/workflows/instabox.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Inspect public API contract and required secret presence
+        env:
+          INSTABOX_API_KEY: ${{ secrets.INSTABOX_API_KEY }}
+          INSTABOX_MACHINE_ID: ${{ secrets.INSTABOX_MACHINE_ID }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          for name in ('INSTABOX_API_KEY', 'INSTABOX_MACHINE_ID'):
+              print(f'{name}: {"configured" if os.environ.get(name) else "missing"}')
+          with urllib.request.urlopen('https://api.instabox.sh/v1/openapi.json', timeout=30) as response:
+              contract = json.load(response)
+          print('API_INFO', json.dumps(contract.get('info')))
+          print('SECURITY_SCHEMES', json.dumps(contract.get('components', {}).get('securitySchemes')))
+          for path, methods in contract.get('paths', {}).items():
+              if any(term in path for term in ('exec', 'resume', 'wake', 'operation', '/machines', '/me', '/usage')):
+                  print('API_PATH', path, json.dumps(methods))
+          print('API_SCHEMAS', json.dumps(contract.get('components', {}).get('schemas', {})))
+          PY
