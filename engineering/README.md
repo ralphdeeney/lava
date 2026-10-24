@@ -81,3 +81,37 @@ The owner can approve an Administration read/write-capable GitHub connection, or
 Settings to install the policy and enable squash auto-merge. Neither action requires sharing
 credentials in chat. Future ordinary tests still use Actions/API automation without SSH;
 this exceptional repository-authorization step cannot be supplied by application code.
+
+## One-time authorized GitHub CLI setup
+
+Run from this checkout in a secure environment whose existing `gh` session has repository
+Administration read/write. No token argument, credential copy, interactive SSH or Actions
+infrastructure secret is required. Do not run concurrent ruleset edits while applying.
+
+```sh
+./scripts/configure-github-protection.sh          # read-only proposed configuration
+./scripts/configure-github-protection.sh --apply  # apply once and verify live read-back
+```
+
+The script targets existing ruleset25796131 for ralphdeeney/lava. It preserves its name,
+conditions, rules, PR requirements and existing status checks, refuses inactive/ambiguous
+main coverage or bypass actors, adds the verified `engineering-controls` and `checks`
+contexts pinned to GitHub Actions app15368, and enables strict updates. It detects observed
+concurrent edits before writing. GitHub does not provide atomic compare-and-swap for this
+operation; administrators must serialize settings changes. Live read-back must exactly match
+the proposed writable policy before enabling native repository auto-merge/squash availability.
+It does not enable any PR's auto-merge, merge a PR, change other merge methods, weaken a rule,
+access InstaBox or retry mutations. A later settings failure leaves stronger protection in
+place and requires inspection, rather than automatic rollback.
+
+The Codex session's single apply attempt returned403 on the ruleset PUT; no changes occurred.
+Use the same script in an already authorized owner CLI session, or grant an approved connection
+Administration access. Do not send credentials in chat. After success, verify exact-head PR
+checks and independent security findings before enabling PR auto-merge with the verified SHA:
+
+```sh
+gh pr merge 2 --auto --squash --match-head-commit <verified-head-sha>
+```
+
+Replace the placeholder; never use `--admin`.
+These two baseline checks are not the unimplemented Phase01 product/browser/VM acceptance gates.
