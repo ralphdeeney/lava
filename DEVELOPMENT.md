@@ -13,15 +13,15 @@ are the expected operator-provided tools. No direct Codex-to-VM connectivity is 
 Transfer work through GitHub: push the branch from an authorized workstation, then clone/fetch
 and check it out on the VM. Local commits are not automatically pushed.
 
-Before building on the approximately 8 GiB VM, mount a separate data disk. Have the operator
-configure Docker `data-root` there, preserving existing daemon settings and migrating any
-existing data safely with Docker stopped. Use `docker info --format '{{.DockerRootDir}}'` to
+Before building on the approximately 8 GiB VM, mount a separate data disk. Inspect Docker `data-root` first. Changing it requires explicit operator authorization;
+only then preserve existing daemon settings and migrate any existing data safely with Docker
+stopped. The verification script never changes storage settings. Use `docker info --format '{{.DockerRootDir}}'` to
 verify. Merely setting BuildKit cache variables does not relocate Docker layers or volumes.
 Do not use a directory on the root filesystem as a substitute for a mounted data disk.
 Set the cache path to that disk and run builds sequentially:
 
 ```sh
-export LAVA_CACHE_DIR=/mnt/lava-data/cache  # replace with your actual mounted disk path
+export LAVA_CACHE_DIR=/data/lava-cache  # replace with your actual mounted disk path
 export UV_CACHE_DIR="$LAVA_CACHE_DIR/uv"
 export npm_config_cache="$LAVA_CACHE_DIR/npm"
 export PATH="$LAVA_CACHE_DIR/tools/node_modules/.bin:$PATH"
@@ -49,14 +49,15 @@ The default Compose database deliberately has no published port.
 # For a disposable reachable PostgreSQL database only (this test downgrades/deletes tables):
 cd apps/api
 export LAVA_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5432/DISPOSABLE_DB'
-LAVA_INTEGRATION=1 uv run --locked pytest tests -m integration
+LAVA_INTEGRATION=1 LAVA_TEST_DATABASE_RESET=1 uv run --locked pytest tests -m integration
 uv run --locked alembic upgrade head
 uv run --locked alembic check
 ```
 
 Unit tests cover liveness, readiness outcomes, configuration redaction/validation, DB failure,
-and structured request logging. The current Starlette test client emits an upstream httpx
-deprecation warning; tests still execute and pass.
+and structured request logging. The release gate uses pinned httpx2 (the test client
+recommended by Starlette) and treats deprecation warnings as errors. It also tests verifier
+redaction, unsafe configuration rejection and project-scoped failure cleanup.
 Integration tests verify real PostgreSQL writes, upgrade/downgrade/re-upgrade and schema drift.
 CI runs unit/lint/type/build, PostgreSQL integration and Compose smoke on GitHub-hosted Linux.
 A workflow file is not evidence of a GitHub Actions run; inspect its result after pushing.
@@ -78,3 +79,51 @@ COMPOSE_FILE=compose.yaml:compose.cloud.yaml COMPOSE_PARALLEL_LIMIT=1 ./scripts/
 `compose.cloud.yaml` mounts the host combined CA bundle as a build secret. It contains no
 credentials and does not copy trust material into application image layers. Normal VM builds
 use only compose.yaml. Build artifacts/processes are regenerated; the data volume persists.
+
+
+## InstaBox release gate
+
+The implementation and follow-up fixes must be fetched from GitHub. Never assume a VM checkout
+contains changes made only in Codex. On `agent-development`, after fetching the feature branch:
+
+```sh
+git fetch origin feat/phase-00-foundation
+git switch feat/phase-00-foundation
+git pull --ff-only
+# Compare this SHA with the published release-verification SHA before continuing.
+git rev-parse HEAD
+uv --version  # requires 0.12.23; install this version if absent
+./scripts/verify-instabox.sh --preflight-only
+export LAVA_CACHE_DIR=/data/lava-cache
+export UV_CACHE_DIR="$LAVA_CACHE_DIR/uv"
+export npm_config_cache="$LAVA_CACHE_DIR/npm"
+export PATH="$LAVA_CACHE_DIR/tools/node_modules/.bin:$PATH"
+./scripts/bootstrap.sh
+./scripts/verify-instabox.sh
+```
+
+The verifier checks Python 3.13, Node >=22, uv 0.12.23, Compose >=2.24.4, Docker connectivity,
+permissions and disk space. `/data` must already be a writable, separately mounted filesystem;
+Docker data-root must be on that filesystem. If it is not, stop and obtain operator authorization
+before any storage migration. No script edits daemon configuration or moves Docker storage.
+
+It uses a random `lava-verify-*` project, private temporary credentials, an isolated database
+volume, and dynamically assigned loopback HTTP ports. Existing development services, ports,
+.env and data remain untouched. HTTP/DB checks, repeated migration upgrade and schema checks
+run before project-scoped teardown. It removes only its own containers, network, volume and
+locally tagged build images; it never prunes global resources. Bounded diagnostics (at most
+64 KiB) remain mode 0600 under `/data/lava-verification/run-*`; passwords and database URLs
+are redacted and the temporary credential file is removed. SIGINT/SIGTERM trigger teardown;
+SIGKILL or host failure cannot be trapped, so inspect leftover `lava-verify-*` projects manually
+rather than pruning all resources.
+
+For ephemeral GitHub runners/Codex Cloud only, `--data-dir <existing-writable-directory>
+--allow-root-storage` explicitly permits the runner's existing daemon storage without moving
+it. Add `--cloud` for the managed CA build secret. The cloud host may need the Python 3.13
+virtualenv's bin directory on PATH. Do not use the root-storage override to ignore the VM's
+20 GB data-disk requirement. GitHub Actions runs this same disposable gate automatically.
+
+The destructive pytest migration suite additionally requires `LAVA_TEST_DATABASE_RESET=1`
+and a database name ending in `_test`; these checks precede all migration commands. This is
+an explicit acknowledgement, not proof that an arbitrary database is safe. Use only a new,
+disposable database. Regular migration `upgrade head` remains non-destructive and repeatable.

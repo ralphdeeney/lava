@@ -20,3 +20,14 @@ worker identity. Never mount the host socket into untrusted application builds o
 
 Report vulnerabilities privately through the repository owner's GitHub contact/security channel.
 Do not include credentials in issues. No security response SLA is promised at this stage.
+
+
+Release verification hardens local secret creation with atomic exclusive mode-0600 writes.
+The verifier captures only bounded, redacted command diagnostics, never environment dumps or
+Docker inspect credential values. It checks exposure and privileges before starting services.
+Disposable Compose projects have unguessable generated names; cleanup targets only that project.
+Destructive migration tests require two explicit flags and a `*_test` database. The GitHub CI
+service password is a test-only fixture for an isolated, loopback-bound runner database, not a
+credential to any persistent environment. No administrative/destructive HTTP endpoint exists.
+The development database owner remains intentionally broad; production role separation and
+public authentication are still prerequisites before Internet exposure.

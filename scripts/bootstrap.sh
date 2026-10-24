@@ -18,8 +18,9 @@ if [[ ! -f .env ]]; then
   python3 - <<'PY'
 from pathlib import Path
 import secrets
-Path('.env').write_text(Path('.env.example').read_text().replace('POSTGRES_PASSWORD=\n', 'POSTGRES_PASSWORD=' + secrets.token_hex(24) + '\n'))
-Path('.env').chmod(0o600)
+import os
+with os.fdopen(os.open('.env', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as envfile:
+    envfile.write(Path('.env.example').read_text().replace('POSTGRES_PASSWORD=\n', 'POSTGRES_PASSWORD=' + secrets.token_hex(24) + '\n'))
 PY
 fi
 ./scripts/check.sh
