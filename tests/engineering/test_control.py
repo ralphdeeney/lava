@@ -45,7 +45,13 @@ def valid_gate():
             name: {"source_commit": SHA, "conclusion": "success"}
             for name in policy["required_checks"]
         },
-        "security": {"independent": True, "executed": True, "simulated": False, "critical_findings": 0, "source_commit": SHA},
+        "security": {
+            "independent": True,
+            "executed": True,
+            "simulated": False,
+            "critical_findings": 0,
+            "source_commit": SHA,
+        },
         "evals": {
             "source_commit": SHA,
             "simulated": False,
@@ -132,7 +138,9 @@ def test_initial_verification_cannot_be_repeated_to_hide_a_failure():
     assert len(value.runs) == 1
 
 
-@pytest.mark.parametrize("diagnosis,new_commit", [("", REPAIR_SHA), ("cause", SHA), ("cause", "short")])
+@pytest.mark.parametrize(
+    "diagnosis,new_commit", [("", REPAIR_SHA), ("cause", SHA), ("cause", "short")]
+)
 def test_repair_requires_diagnosis_and_new_exact_commit(diagnosis, new_commit):
     value = slice_record()
     value.verification([outcome(status="failed")], source_commit=SHA)
@@ -160,10 +168,14 @@ def test_store_persists_the_repair_budget_across_reload(tmp_path):
     path = tmp_path / "progress.json"
     path.write_text(json.dumps(asdict(slice_record())))
     store = Store(path)
-    store.update(lambda value: value.verification([outcome(status="failed")], source_commit=SHA))
+    store.update(
+        lambda value: value.verification([outcome(status="failed")], source_commit=SHA)
+    )
     store.update(lambda value: value.repair("Isolated cause", REPAIR_SHA))
     Store(path).update(
-        lambda value: value.verification([outcome(status="failed")], source_commit=REPAIR_SHA)
+        lambda value: value.verification(
+            [outcome(status="failed")], source_commit=REPAIR_SHA
+        )
     )
     saved = json.loads(path.read_text())
     assert saved["state"] == "BLOCKED"
@@ -244,7 +256,9 @@ def test_missing_required_evidence_blocks_merging(section):
         ("instabox", "exitCode", 1),
     ],
 )
-def test_security_evaluation_and_infrastructure_failures_block_merging(section, field, value):
+def test_security_evaluation_and_infrastructure_failures_block_merging(
+    section, field, value
+):
     policy, evidence = valid_gate()
     evidence[section][field] = value
     assert assess_merge(policy, evidence, SHA)
@@ -254,10 +268,15 @@ def test_stale_successful_status_check_cannot_satisfy_current_head():
     policy, evidence = valid_gate()
     evidence["checks"]["checks"]["source_commit"] = REPAIR_SHA
     blockers = assess_merge(policy, evidence, SHA)
-    assert any("required check not successful for exact head: checks" in reason for reason in blockers)
+    assert any(
+        "required check not successful for exact head: checks" in reason
+        for reason in blockers
+    )
 
 
-@pytest.mark.parametrize("field", ["scope_authorized", "mergeable", "approvals_satisfied"])
+@pytest.mark.parametrize(
+    "field", ["scope_authorized", "mergeable", "approvals_satisfied"]
+)
 def test_unverified_authorization_or_approvals_block_merging(field):
     policy, evidence = valid_gate()
     evidence[field] = False
@@ -273,7 +292,9 @@ def test_merge_assessment_does_not_mutate_its_observations():
 
 @pytest.mark.parametrize("section", ["security", "evals"])
 @pytest.mark.parametrize("source_commit", [None, REPAIR_SHA])
-def test_nested_review_and_eval_evidence_must_match_the_exact_head(section, source_commit):
+def test_nested_review_and_eval_evidence_must_match_the_exact_head(
+    section, source_commit
+):
     policy, evidence = valid_gate()
     if source_commit is None:
         del evidence[section]["source_commit"]

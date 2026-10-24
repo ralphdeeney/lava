@@ -12,7 +12,10 @@ OTHER_SHA = "b" * 40
 
 
 def cases():
-    return [{"id": f"EVAL-{index:03}", "critical": index in (3, 5, 6)} for index in range(1, 21)]
+    return [
+        {"id": f"EVAL-{index:03}", "critical": index in (3, 5, 6)}
+        for index in range(1, 21)
+    ]
 
 
 def observations():
@@ -34,7 +37,13 @@ def test_twenty_valid_fixture_observations_have_exact_totals():
     report = evaluate(cases(), observations(), SHA)
     assert report["mandatory_total"] == 20
     assert report["passed"] == 20
-    assert report["failed"] == report["skipped"] == report["blocked"] == report["not_run"] == 0
+    assert (
+        report["failed"]
+        == report["skipped"]
+        == report["blocked"]
+        == report["not_run"]
+        == 0
+    )
     assert report["critical_security_failures"] == 0
     assert report["source_commit"] == SHA
     assert report["release_ready"] is True
@@ -45,12 +54,20 @@ def test_missing_product_evidence_remains_not_run():
     assert report["passed"] == 0
     assert report["not_run"] == 20
     assert report["release_ready"] is False
-    assert all(item["reason"] == "No executed acceptance evidence" for item in report["results"])
+    assert all(
+        item["reason"] == "No executed acceptance evidence"
+        for item in report["results"]
+    )
 
 
 @pytest.mark.parametrize(
     "field,value",
-    [("source_commit", OTHER_SHA), ("executed", False), ("simulated", True), ("evidence", "")],
+    [
+        ("source_commit", OTHER_SHA),
+        ("executed", False),
+        ("simulated", True),
+        ("evidence", ""),
+    ],
 )
 def test_stale_unexecuted_or_simulated_observations_cannot_pass(field, value):
     evidence = observations()
@@ -61,7 +78,9 @@ def test_stale_unexecuted_or_simulated_observations_cannot_pass(field, value):
     assert report["release_ready"] is False
 
 
-@pytest.mark.parametrize("field", ["source_commit", "executed", "simulated", "evidence"])
+@pytest.mark.parametrize(
+    "field", ["source_commit", "executed", "simulated", "evidence"]
+)
 def test_missing_execution_metadata_cannot_pass(field):
     evidence = observations()
     del evidence[0][field]
@@ -127,7 +146,6 @@ def test_evaluation_accounting_does_not_mutate_original_evidence():
     assert (source_cases, source_observations) == original
 
 
-
 def test_direct_empty_case_collection_is_rejected():
     with pytest.raises(ValueError):
         evaluate([], [], SHA)
@@ -146,3 +164,15 @@ def test_evaluator_rejects_invalid_full_commit_identity(invalid_sha):
         observation["source_commit"] = invalid_sha
     with pytest.raises(ValueError):
         evaluate(cases(), evidence, invalid_sha)
+
+
+def test_partial_catalog_cannot_claim_complete_phase_release():
+    with pytest.raises(ValueError):
+        evaluate(cases()[:1], observations()[:1], SHA)
+
+
+def test_passed_evidence_without_reason_is_not_described_as_unexecuted():
+    evidence = observations()
+    del evidence[0]["reason"]
+    report = evaluate(cases(), evidence, SHA)
+    assert report["results"][0]["reason"] != "No executed acceptance evidence"
