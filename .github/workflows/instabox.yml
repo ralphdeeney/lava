@@ -17,7 +17,7 @@ jobs:
           INSTABOX_MACHINE_ID: ${{ secrets.INSTABOX_MACHINE_ID }}
         run: |
           python3 - <<'PY'
-          import json, os, urllib.request
+          import json, os, urllib.request, urllib.parse
           for name in ('INSTABOX_API_KEY', 'INSTABOX_MACHINE_ID'):
               print(f'{name}: {"configured" if os.environ.get(name) else "missing"}')
           with urllib.request.urlopen('https://api.instabox.sh/v1/openapi.json', timeout=30) as response:
@@ -27,5 +27,18 @@ jobs:
           for path, methods in contract.get('paths', {}).items():
               if any(term in path for term in ('exec', 'resume', 'wake', 'operation', '/machines', '/me', '/usage')):
                   print('API_PATH', path, json.dumps(methods))
-          print('API_SCHEMAS', json.dumps(contract.get('components', {}).get('schemas', {})))
+          print('COMPONENT_KEYS', list(contract.get('components', {})))
+          for name, schema in contract.get('components', {}).get('schemas', {}).items():
+              if name in ('ExecRequest', 'ExecResult', 'Machine', 'Operation', 'Me', 'Usage', 'MachineRuntime', 'MachineStatus'):
+                  print('API_SCHEMA', name, json.dumps(schema))
+          key = os.environ.get('INSTABOX_API_KEY')
+          machine = os.environ.get('INSTABOX_MACHINE_ID')
+          if key and machine:
+              for path in ('/v1/me', '/v1/machines/' + urllib.parse.quote(machine, safe='')):
+                  request = urllib.request.Request('https://api.instabox.sh' + path, headers={'X-API-Key': key})
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      result = json.load(response)
+                  # Only safe machine/lifecycle/account metadata; no identities or credentials.
+                  fields = ('name', 'state', 'status', 'runtime', 'operationId', 'cooldownUntil', 'suspendReason', 'plan', 'activated', 'inviteRequired', 'billing')
+                  print('LIVE_METADATA', json.dumps({k: result[k] for k in fields if k in result}))
           PY
