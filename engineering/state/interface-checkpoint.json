@@ -1,0 +1,120 @@
+{
+  "phase": "01",
+  "slice_id": "pipeline-control-interfaces",
+  "branch": "feat/autonomous-phase01-pipeline",
+  "source_commit": "80376a829e789dfd550c4c517c4aefcd98f9e312",
+  "state": "VERIFIED",
+  "repair_attempts": 1,
+  "diagnosis": "Reject invalid/empty/partial/stale/simulated evidence, prevent dirty attribution, make policy metadata-only; correct test invocation cwd and format.",
+  "pr_url": null,
+  "merged_commit": null,
+  "blockers": [],
+  "runs": [
+    {
+      "source_commit": "3ceb49a2b6eaf4d06044422cca869065b04b40d9",
+      "results": [
+        {
+          "name": "ruff",
+          "executed": true,
+          "simulated": false,
+          "status": "passed",
+          "exitCode": 0,
+          "diagnostic": "/tmp/lava-pipeline-ruff.log"
+        },
+        {
+          "name": "format",
+          "executed": true,
+          "simulated": false,
+          "status": "failed",
+          "exitCode": 1,
+          "diagnostic": "/tmp/lava-pipeline-format.log"
+        },
+        {
+          "name": "complete_tests",
+          "executed": true,
+          "simulated": false,
+          "status": "failed",
+          "exitCode": 1,
+          "diagnostic": "/tmp/lava-pipeline-complete_tests.log"
+        },
+        {
+          "name": "svelte",
+          "executed": true,
+          "simulated": false,
+          "status": "passed",
+          "exitCode": 0,
+          "diagnostic": "/tmp/lava-pipeline-svelte.log"
+        },
+        {
+          "name": "frontend_build",
+          "executed": true,
+          "simulated": false,
+          "status": "passed",
+          "exitCode": 0,
+          "diagnostic": "/tmp/lava-pipeline-frontend_build.log"
+        },
+        {
+          "name": "independent_security_architecture_review",
+          "status": "failed",
+          "executed": true,
+          "simulated": false,
+          "reason": "invalid/partial/stale/simulated acceptance; metadata-only readiness; dirty SHA attribution"
+        }
+      ],
+      "kind": "initial"
+    },
+    {
+      "source_commit": "80376a829e789dfd550c4c517c4aefcd98f9e312",
+      "results": [
+        {
+          "name": "ruff",
+          "executed": true,
+          "simulated": false,
+          "status": "passed",
+          "exitCode": 0,
+          "diagnostic": "/tmp/lava-pipeline-ruff.log"
+        },
+        {
+          "name": "format",
+          "executed": true,
+          "simulated": false,
+          "status": "passed",
+          "exitCode": 0,
+          "diagnostic": "/tmp/lava-pipeline-format.log"
+        },
+        {
+          "name": "complete_tests",
+          "executed": true,
+          "simulated": false,
+          "status": "passed",
+          "exitCode": 0,
+          "diagnostic": "/tmp/lava-pipeline-complete_tests.log"
+        },
+        {
+          "name": "svelte",
+          "executed": true,
+          "simulated": false,
+          "status": "passed",
+          "exitCode": 0,
+          "diagnostic": "/tmp/lava-pipeline-svelte.log"
+        },
+        {
+          "name": "frontend_build",
+          "executed": true,
+          "simulated": false,
+          "status": "passed",
+          "exitCode": 0,
+          "diagnostic": "/tmp/lava-pipeline-frontend_build.log"
+        },
+        {
+          "name": "independent_static_security_retest",
+          "status": "passed",
+          "executed": true,
+          "simulated": false,
+          "scope": "offline interfaces only; no product/VM/protected-controller approval"
+        }
+      ],
+      "kind": "retest"
+    }
+  ]
+}

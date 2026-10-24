@@ -1,0 +1,32 @@
+name: Engineering control interfaces
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  engineering-controls:
+    name: engineering-controls
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.23'
+          python-version: '3.13.5'
+      - run: uv sync --project apps/api --locked
+      - run: uv run --project apps/api --locked ruff check engineering tests/engineering evals/runners
+      - run: uv run --project apps/api --locked ruff format --check engineering tests/engineering evals/runners
+      - name: Test orchestration interfaces (not product acceptance)
+        env:
+          PYTHONPATH: .
+        run: uv run --project apps/api --locked pytest tests/engineering --junitxml=engineering-test-results.xml
+      - name: Publish test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engineering-controls-${{ github.sha }}
+          path: engineering-test-results.xml
+          retention-days: 7

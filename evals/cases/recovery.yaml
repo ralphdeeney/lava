@@ -1,0 +1,47 @@
+[
+  {
+    "id": "EVAL-012",
+    "category": "recovery",
+    "mandatory": true,
+    "title": "Preserve services across API restarts",
+    "assertions": "real process restart using unchanged PostgreSQL volume",
+    "critical": false,
+    "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
+  },
+  {
+    "id": "EVAL-013",
+    "category": "recovery",
+    "mandatory": true,
+    "title": "Verify migration consistency",
+    "assertions": "real PostgreSQL upgrade/downgrade/re-upgrade and Alembic check",
+    "critical": false,
+    "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
+  },
+  {
+    "id": "EVAL-018",
+    "category": "recovery",
+    "mandatory": true,
+    "title": "Fresh-machine setup and Compose health",
+    "assertions": "frozen install, real HTTP/DB checks and exact-SHA VM result",
+    "critical": false,
+    "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
+  },
+  {
+    "id": "EVAL-019",
+    "category": "recovery",
+    "mandatory": true,
+    "title": "Readiness fails with PostgreSQL unavailable",
+    "assertions": "health200, ready503 during real DB outage, recovery verified",
+    "critical": false,
+    "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
+  },
+  {
+    "id": "EVAL-020",
+    "category": "recovery",
+    "mandatory": true,
+    "title": "Temporary resources are cleaned up",
+    "assertions": "run-owned resources removed and unrelated resource sentinel preserved",
+    "critical": true,
+    "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
+  }
+]

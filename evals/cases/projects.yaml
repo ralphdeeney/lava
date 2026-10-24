@@ -1,0 +1,20 @@
+[
+  {
+    "id": "EVAL-004",
+    "category": "projects",
+    "mandatory": true,
+    "title": "Create and retrieve a project",
+    "assertions": "persistent UUID and correct ownership",
+    "critical": false,
+    "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
+  },
+  {
+    "id": "EVAL-014",
+    "category": "projects",
+    "mandatory": true,
+    "title": "Create project through the browser",
+    "assertions": "real Playwright desktop/mobile interaction, persisted API record and keyboard navigation",
+    "critical": false,
+    "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
+  }
+]

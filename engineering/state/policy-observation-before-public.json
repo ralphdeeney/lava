@@ -1,0 +1,18 @@
+{
+  "repository": "ralphdeeney/lava",
+  "private": true,
+  "auto_merge_enabled": false,
+  "main_protected": false,
+  "protection_verified": false,
+  "errors": {
+    "repository": null,
+    "branch": null,
+    "protection": "Resource not accessible by integration",
+    "rulesets": "Upgrade to GitHub Pro or make this repository public to enable this feature."
+  },
+  "protected_automerge_ready": false,
+  "metadata_only": true,
+  "blockers": [
+    "Read-only metadata probe: no verified protected merge controller is active"
+  ]
+}

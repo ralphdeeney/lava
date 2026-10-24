@@ -37,6 +37,17 @@ The modular monolith lives in apps/api/src/lava; the dashboard lives in apps/web
 
 ## Phase boundaries
 
-Phase 00 includes foundation and its release/infrastructure verification only. Phase 01 tasks
-may be planned in ROADMAP.md but implementation must wait until Phase 00 is merged.
+Phase 00 PR #1 is merged at 284547ce6fc7ae69f5633262831981c25fefcd8c.
+Phase 01 scope is control-plane metadata/auth/dashboard only; no customer-container execution.
+Configure and verify protected auto-merge policy before starting product slices. Unknown or
+unavailable main protection is a blocker, never permission for a direct merge workaround.
+Use the six specialist instructions under .agents/; implementation cannot approve its own
+security findings. Collect all initial failures, diagnose once, make one bounded repair, and
+retest once. A remaining failure permanently blocks dependent slices. Track exact SHA, repair
+count, tests/evals, PR and actual merge state; never advance on auto-merge enablement alone.
+No persistent coding runner is currently verified: do not claim autonomous background work.
+Do not run unreviewed candidate code on a credential-bearing or Docker-root persistent VM.
+The existing Phase 00 VM workflow is evidence for its trusted sources, not a security gate
+for arbitrary Phase 01 PRs. All 20 Phase 01 evaluations remain not_run until independently
+executed against implemented features. See engineering/README.md and evals/README.md.
 No Kubernetes, billing, autoscaling or AI agents in these phases.
