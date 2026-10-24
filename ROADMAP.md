@@ -30,3 +30,14 @@ Do not merge automatically. Phase 01 remains blocked until Phase 00 is merged in
 
 Authentication/authorization and production isolation must precede public deployment APIs.
 Kubernetes, billing, autoscaling and AI agents remain out of scope.
+
+## Phase 01 control-plane authorization (supersedes the deployment-engine plan above)
+
+PR #1 is merged. The current authorized sequence is01.1 domain schema;01.2 sessions/auth;
+01.3 ownership/tenant roles;01.4 projects;01.5 environments/services;01.6 immutable deployment
+metadata/state machine;01.7 real dashboard/browser journeys;01.8 security/acceptance hardening.
+No customer containers, build engine execution or networking adapters are authorized here.
+Before01.1, protected auto-merge must be configured and verified. That prerequisite is BLOCKED:
+main is currently unprotected, the integration cannot manage protection, and private rulesets
+are unavailable on the current account. Preserve draft work and do not use direct merges.
+See engineering/state/progress.json for the durable checkpoint and exact acceptance status.

@@ -31,3 +31,26 @@ review and separation from operator credentials/persistent resources. Current Ph
 remote verification remains restricted to its trusted sources and is not a Phase 01 security
 gate. Security findings in the progress report are blockers until remedied and independently
 verified. No API/merge adapter is enabled while these trust prerequisites are unresolved.
+
+## Recorded attempt
+
+Phase 00 was already merged when this task began. The initial control-interface run collected
+18 failures/98 passes plus two additional review regression failures before any repair. One
+failure was a test-harness migration working-directory error, not an application defect.
+A single aggregate repair addressed the complete failure set and formatter findings. The only
+post-repair full run passed118 tests, plus the separate repeat PostgreSQL migration check.
+No second code repair was attempted. Independent static security retest found no remaining
+blocking defect in the offline interfaces; it did not approve privileged Phase01 execution.
+
+`state/interface-checkpoint.json` retains the initial aggregate, diagnosis, repair counter and
+single retest against the exact repaired code commit. `state/progress.json` records the phase,
+branch, checkpoint SHA, tests, unexecuted acceptance/browser/VM work and external blockers.
+Because a tracked file cannot contain its own Git SHA, checkpoint_source_commit is the tested
+implementation checkpoint; GitHub workflow artifacts and the PR record the final submission
+SHA. This distinction prevents stale source claims.
+
+`main-protection.proposed.json` is a reviewable baseline using actual observed Phase00 check
+names (`checks`, `integration`, GitHub Actions app15368), strict status updates, administrator
+enforcement, linear history and no force push/deletion. The PUT attempt failed403; this file
+is not applied configuration and is insufficient for Phase01 without subsequently executed
+security/browser/evaluation checks and a trusted controller. Auto-merge was not enabled.

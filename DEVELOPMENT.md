@@ -184,3 +184,12 @@ The first real automated gate succeeded at commit
 `8f00d9af1abd3c28b71d2dcc7f2b5736b039fa1d`:
 https://github.com/ralphdeeney/lava/actions/runs/40111964466 . Subsequent changes must pass
 both workflows for their own SHA; never substitute this historical run for current evidence.
+
+## Phase01 pipeline preparation status
+
+Phase00 is merged, but Phase01 product work is not started. Native implementation, QA, security,
+architecture/evaluation and user-simulation specialists contributed independent scoped reviews.
+No persistent coding runner exists. See engineering/README.md for the executable one-repair
+interfaces, real GitHub-policy observation and blocked checkpoint. The Phase01 evaluation
+catalog is a specification with20 not-run cases, not evidence of application functionality.
+Protected merge policy and a trusted infrastructure-controller boundary must be resolved first.

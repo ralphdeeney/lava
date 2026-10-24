@@ -1,0 +1,81 @@
+{
+  "project": "LAVA",
+  "phase": "01",
+  "slice": "pipeline prerequisites (before01.1)",
+  "branch": "feat/autonomous-phase01-pipeline",
+  "checkpoint_source_commit": "80376a829e789dfd550c4c517c4aefcd98f9e312",
+  "current_commit_command": "git rev-parse HEAD; CI artifacts bind their exact workflow SHA",
+  "implementation_status": "BLOCKED_EXTERNAL",
+  "interface_status": "VERIFIED",
+  "repair_attempts": 1,
+  "persistent_coding_runner": "unavailable/not provisioned",
+  "background_coding_active": false,
+  "phase00": {
+    "pr": "https://github.com/ralphdeeney/lava/pull/1",
+    "state": "MERGED",
+    "merge_commit": "284547ce6fc7ae69f5633262831981c25fefcd8c"
+  },
+  "pr_url": null,
+  "merge_state": "NOT_OPENED_YET",
+  "auto_merge_enabled": false,
+  "verification": {
+    "local_full_suite": {
+      "passed": 118,
+      "failed": 0,
+      "skipped": 0,
+      "source_commit": "80376a829e789dfd550c4c517c4aefcd98f9e312"
+    },
+    "post_repair_full_runs": 1,
+    "ruff": "passed",
+    "format": "passed",
+    "svelte_errors": 0,
+    "frontend_build": "passed",
+    "security": {
+      "scope": "corrected offline interfaces",
+      "reviewer": "independent specialist",
+      "remaining_scoped_blockers": 0
+    },
+    "phase01_evals": {
+      "mandatory_total": 20,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "not_run": 20,
+      "release_ready": false
+    },
+    "phase01_browser": {
+      "status": "not_run",
+      "reason": "Product not implemented; prerequisite policy blocked"
+    },
+    "phase01_instabox": {
+      "status": "not_run",
+      "reason": "Do not expose infrastructure credentials or persistent VM to unreviewed candidates"
+    }
+  },
+  "blockers": [
+    {
+      "type": "external_account",
+      "message": "Private repository rulesets require GitHub Pro or public visibility. Repository remains private; no plan purchase authorized."
+    },
+    {
+      "type": "external_authorization",
+      "message": "Branch protection GET/PUT returned403 Resource not accessible by integration; main protected=false."
+    },
+    {
+      "type": "security_prerequisite",
+      "message": "No protected-main trusted execution/merge controller; existing Phase00 VM runner must not approve arbitrary Phase01 candidates."
+    }
+  ],
+  "next_authorized_action": "Verify eligible private-repository main protection and integration permissions; configure proven gates before product01.1. No direct merge workaround.",
+  "phase01_slices": {
+    "01.1": "NOT_STARTED_DEPENDENCY_BLOCKED",
+    "01.2": "NOT_STARTED_DEPENDENCY_BLOCKED",
+    "01.3": "NOT_STARTED_DEPENDENCY_BLOCKED",
+    "01.4": "NOT_STARTED_DEPENDENCY_BLOCKED",
+    "01.5": "NOT_STARTED_DEPENDENCY_BLOCKED",
+    "01.6": "NOT_STARTED_DEPENDENCY_BLOCKED",
+    "01.7": "NOT_STARTED_DEPENDENCY_BLOCKED",
+    "01.8": "NOT_STARTED_DEPENDENCY_BLOCKED"
+  },
+  "phase02_ready": false
+}
