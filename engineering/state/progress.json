@@ -15,8 +15,8 @@
     "state": "MERGED",
     "merge_commit": "284547ce6fc7ae69f5633262831981c25fefcd8c"
   },
-  "pr_url": null,
-  "merge_state": "NOT_OPENED_YET",
+  "pr_url": "https://github.com/ralphdeeney/lava/pull/2",
+  "merge_state": "DRAFT_BLOCKED_UNMERGED",
   "auto_merge_enabled": false,
   "verification": {
     "local_full_suite": {
@@ -50,6 +50,12 @@
     "phase01_instabox": {
       "status": "not_run",
       "reason": "Do not expose infrastructure credentials or persistent VM to unreviewed candidates"
+    },
+    "engineering_ci": {
+      "source_commit": "2a6acb1c680b5640ce8ab06a0a4cda64cd6b3ef9",
+      "status": "passed",
+      "url": "https://github.com/ralphdeeney/lava/actions/runs/40115879400",
+      "scope": "offline interface unit tests only"
     }
   },
   "blockers": [
