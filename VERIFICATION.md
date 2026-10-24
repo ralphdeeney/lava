@@ -76,20 +76,19 @@ The backend production dependency set is unaffected by this test-client replacem
   development foundation; public exposure, production role separation and privileged build
   isolation are not implemented or approved in Phase 00.
 
-## InstaBox: pending external execution
+## InstaBox: operator-reported pass
 
-No commands were run on `agent-development`; no SSH access or storage migration was attempted.
-The repository on that VM must be fetched from GitHub and its SHA compared before testing.
-The repeatable gate is documented in DEVELOPMENT.md and implemented by
-`scripts/verify-instabox.sh` plus `scripts/verify_instabox.py`.
+On 2026-10-24 the operator reported that the real `agent-development` integration gate passed:
 
-Run preflight on the VM, inspect the existing Docker data-root and `/data` mount, provision
-uv 0.12.23 if needed, then run bootstrap and the verifier. Default preflight refuses builds
-unless the selected data filesystem is separately mounted and Docker already stores data
-there. Any storage change requires separate, explicit operator authorization. The script
-never moves storage. SIGKILL/host failure cannot guarantee automatic cleanup; inspect only
-its uniquely named project if interrupted.
+- Docker data-root: `/data/docker`.
+- Available disk: 19,661 MiB.
+- Compose startup, HTTP, PostgreSQL, migrations, non-root and cleanup checks: PASS.
 
-The remaining release gate is actual VM execution on Docker 29.8.2, Compose 5.6.0, Python
-3.13.5, Node 22.23.3, approximately 8 GiB RAM and the 20 GB /data volume. Cloud/CI success
-must not be reported as InstaBox success. Do not begin Phase 01 until this gate is accepted.
+This evidence was supplied by the operator; Codex did not connect to or modify the VM, and
+raw VM logs were not independently inspected. The previous external-execution blocker is
+resolved by that reported result. No Phase 01 work is authorized by this update.
+
+The remaining test portability issue was isolated to the simulated startup-failure test:
+it inherited the test runner filesystem's free space. That test now mocks disk capacity to
+8 GiB free, allowing it to exercise startup failure, scoped cleanup and log redaction on
+small runners. The actual verifier's 4 GiB minimum is unchanged.

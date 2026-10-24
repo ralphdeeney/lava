@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -88,6 +89,12 @@ def test_startup_failure_cleans_only_owned_project_and_redacts_logs(tmp_path, mo
             code = 1
         return subprocess.CompletedProcess(argv, code, output)
 
+    # This test exercises failed-startup cleanup, independently of runner disk capacity.
+    monkeypatch.setattr(
+        verifier.shutil,
+        "disk_usage",
+        lambda path: SimpleNamespace(total=16 * 1024**3, used=8 * 1024**3, free=8 * 1024**3),
+    )
     monkeypatch.setattr(verifier.subprocess, "run", run)
     monkeypatch.setattr(
         sys, "argv", ["verify", "--data-dir", str(tmp_path), "--allow-root-storage"]
