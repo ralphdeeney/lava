@@ -1,31 +1,95 @@
-# Phase 00 verification
+# Phase 00 release verification
 
-Verified in Codex Cloud on 2026-10-24; this is not an InstaBox result.
+Verification date: 2026-10-24. No Phase 01 functionality was added.
 
-- `scripts/bootstrap.sh` completed twice after fixes, including frozen pnpm/uv installs.
-- Ruff check and format check passed (14 Python files).
-- Final combined backend run: 8 passed, 0 skipped, 1 upstream warning (3.60 seconds).
-  This comprises 7 unit tests and 1 PostgreSQL integration test against a
-  disposable PostgreSQL 17.9 container: upgrade, write, downgrade, unready schema,
-  re-upgrade, and Alembic schema-drift check. No zero-test run is counted as validation.
-- Svelte check: 0 errors, 0 warnings. Production build passed locally and in the pinned
-  Node 22.23.0 image; container builds also run Svelte check.
-- Compose cloud override builds with verified TLS via a CA build secret. Functional smoke
-  checks passed for frontend HTML, `/health` JSON and database-backed `/ready` JSON.
-- PostgreSQL outage behavior: `/health` 200 and `/ready` 503; DB restarted afterward.
-- Compose configuration assertions: no DB host port, loopback-only HTTP ports, no API socket
-  mount. API UID 10001 and frontend UID 1000 were verified in running containers.
-- Shell syntax and Git whitespace checks passed.
+## Publication
 
-Host: Python 3.13.5, Node 24.19.0, uv 0.12.23, pnpm 10.32.1, Docker 28.4.0,
-Compose 2.40.3. The containerized Node build uses the pinned Node 22 version.
+Implementation `e84ecf3154e8f82bf2394b2b5d3b70148f592d29` was pushed to
+`feat/phase-00-foundation` and its remote SHA verified exactly. Release-verification fixes
+were committed and pushed on the same branch. [PR #1](https://github.com/ralphdeeney/lava/pull/1)
+is open against `main`; this task does not merge it. Use the PR head and check results for the
+latest documentation-inclusive commit SHA.
 
-One upstream Starlette/httpx test-client deprecation warning remains. It does not skip tests.
-CI is configured but has not run on GitHub in this task. The feature branch is committed
-locally, not pushed. No connection to `agent-development` was attempted; its specific Docker,
-Compose and Node patch versions remain unverified. Run the documented bootstrap and smoke
-gate there after transferring the branch through GitHub. Railpack, BuildKit execution worker,
-Traefik, deployments, auth and production hardening are intentionally future work.
+The implementation's [push CI](https://github.com/ralphdeeney/lava/actions/runs/40107468408)
+and [PR CI](https://github.com/ralphdeeney/lava/actions/runs/40107865710) passed.
+The first verification fixes at `907f04d3a0a31836e287c64fb9e9ba002531ebd1` also passed full
+[push CI](https://github.com/ralphdeeney/lava/actions/runs/40107971962) and
+[PR CI](https://github.com/ralphdeeney/lava/actions/runs/40107975784), including the disposable
+Compose gate. Subsequent commits rerun the full workflow; final HEAD results are linked in
+the PR checks and the release report rather than treating an earlier run as HEAD evidence.
 
-The exact changed-file list is available with `git show --stat HEAD` and
-`git diff-tree --no-commit-id --name-only -r HEAD` after the Phase 00 commit.
+## Clean checkout and local results
+
+A separate fresh clone was fetched from GitHub (not copied from the working tree), using
+separate initially empty npm, pnpm and uv caches. Bootstrap completed and was repeated after
+fast-forwarding to `b4ecd9c94799fd515a2076b584d8d4ee561b2354`.
+The clean checkout remained unchanged after installation, tests and teardown.
+
+- Frozen pnpm/uv installs: passed. Direct dependencies, transitive locks and base image
+  digests are pinned. GitHub Actions themselves use versioned upstream action tags.
+- Ruff check and formatting: passed for API and verifier Python files. Shell syntax and Git
+  whitespace checks passed.
+- Backend combined run: **17 passed, 0 skipped, 0 warnings** (15.25 seconds), including real
+  PostgreSQL migration integration and operator-script safety tests.
+- Separate repeat of destructive migration integration: **1 passed**, 16 deselected
+  (8.81 seconds), using the same disposable database; upgrade/downgrade/re-upgrade and schema
+  drift checks passed again. The test verifies that a downgraded schema is unready.
+- Svelte checks: **0 errors, 0 warnings**. Production builds passed on the host and in the
+  pinned Node 22.23.0 container.
+- The actual `scripts/verify-instabox.sh` entry point passed in Codex Cloud, using its explicit
+  ephemeral-storage override and cloud CA secret. Compose startup, frontend HTML, health and
+  readiness JSON, PostgreSQL SQL query, repeated `upgrade head`, `alembic check`, non-root
+  public services and project-scoped teardown all passed from the clean clone.
+- Default development stack remained running and unaffected. Disposable test containers and
+  volumes were removed. The verifier never changes Docker storage or prunes global resources.
+
+Host tools: Python 3.13.5 (explicitly selected virtualenv), Node 24.19.0, uv 0.12.23,
+pnpm 10.32.1, Docker 28.4.0, Compose 2.40.3. These are not the target VM's versions.
+
+## Deprecation warning
+
+Starlette 1.10.0 explicitly prefers `httpx2` and warns when falling back to `httpx`.
+Confirmed against its installed source and upstream tagged pyproject. The maintained
+[Pydantic HTTPX2](https://github.com/pydantic/httpx2) client is the supported path.
+Replaced test-only `httpx==0.28.1` with `httpx2==2.16.0`, refreshed the uv lock and reran tests.
+Deprecation warnings now fail pytest; no warning filters suppress the previous issue.
+The backend production dependency set is unaffected by this test-client replacement.
+
+## Security findings and fixes
+
+- No live secrets found in the reviewed Git history: local generated PostgreSQL passwords,
+  private-key headers and GitHub-token patterns were checked without printing values.
+  This is a scoped audit, not a guarantee against every possible secret format.
+- Bootstrap now creates .env atomically/exclusively at mode 0600, avoiding a readable creation
+  window or following a dangling symlink. Existing configuration is preserved.
+- Public services have no Docker socket, no privileged mode and no host networking. PostgreSQL
+  publishes no host ports; HTTP defaults are loopback only. API UID 10001 and web UID 1000 were
+  checked. Docker TCP configuration is not modified; the VM's daemon listener remains an
+  operator-side check because the VM was not accessed.
+- Added explicit reset acknowledgement and `*_test` target checks before destructive pytest
+  migrations, with regression tests proving unsafe targets issue no migration command.
+- Replaced raw CI Compose logs with bounded/redacted diagnostic collection. Three actual
+  diagnostic files were checked: private permissions, at most 64 KiB, no retained credential
+  files, no raw database URLs or local passwords. Multibyte output is bounded by bytes.
+  The simulated failed-startup test verifies redaction and scoped cleanup.
+- No administrative/destructive HTTP endpoints exist. This remains an unauthenticated local
+  development foundation; public exposure, production role separation and privileged build
+  isolation are not implemented or approved in Phase 00.
+
+## InstaBox: pending external execution
+
+No commands were run on `agent-development`; no SSH access or storage migration was attempted.
+The repository on that VM must be fetched from GitHub and its SHA compared before testing.
+The repeatable gate is documented in DEVELOPMENT.md and implemented by
+`scripts/verify-instabox.sh` plus `scripts/verify_instabox.py`.
+
+Run preflight on the VM, inspect the existing Docker data-root and `/data` mount, provision
+uv 0.12.23 if needed, then run bootstrap and the verifier. Default preflight refuses builds
+unless the selected data filesystem is separately mounted and Docker already stores data
+there. Any storage change requires separate, explicit operator authorization. The script
+never moves storage. SIGKILL/host failure cannot guarantee automatic cleanup; inspect only
+its uniquely named project if interrupted.
+
+The remaining release gate is actual VM execution on Docker 29.8.2, Compose 5.6.0, Python
+3.13.5, Node 22.23.3, approximately 8 GiB RAM and the 20 GB /data volume. Cloud/CI success
+must not be reported as InstaBox success. Do not begin Phase 01 until this gate is accepted.

@@ -92,7 +92,11 @@ git switch feat/phase-00-foundation
 git pull --ff-only
 # Compare this SHA with the published release-verification SHA before continuing.
 git rev-parse HEAD
-uv --version  # requires 0.12.23; install this version if absent
+# If uv is missing, provision it on the already-mounted, writable /data disk:
+python3 -m venv /data/lava-tools
+/data/lava-tools/bin/python -m pip install uv==0.12.23
+export PATH="/data/lava-tools/bin:$PATH"
+uv --version  # must report 0.12.23
 ./scripts/verify-instabox.sh --preflight-only
 export LAVA_CACHE_DIR=/data/lava-cache
 export UV_CACHE_DIR="$LAVA_CACHE_DIR/uv"
