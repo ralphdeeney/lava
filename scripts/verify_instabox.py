@@ -355,7 +355,12 @@ def main() -> int:
         # Bound the retained diagnostic file across all command invocations.
         log = run_dir / "commands.log"
         if log.exists():
-            log.write_text(redact(log.read_text()[-65536:], credentials))
+            log.write_bytes(
+                redact(log.read_text(), credentials)
+                .encode()[-65536:]
+                .decode(errors="ignore")
+                .encode()
+            )
         print(f"Bounded, redacted diagnostics: {run_dir}")
     return status
 

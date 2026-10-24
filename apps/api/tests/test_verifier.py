@@ -84,7 +84,7 @@ def test_startup_failure_cleans_only_owned_project_and_redacts_logs(tmp_path, mo
                 if line.startswith("POSTGRES_PASSWORD=")
             )
             passwords.append(password)
-            output = f"Startup failed; password={password}"
+            output = f"Startup failed; password={password}" + "é" * 70000
             code = 1
         return subprocess.CompletedProcess(argv, code, output)
 

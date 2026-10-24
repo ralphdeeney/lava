@@ -31,3 +31,17 @@ def test_migration_round_trip():
         subprocess.run(["alembic", "check"], check=True)
     finally:
         engine.dispose()
+
+
+@pytest.mark.parametrize("name,acknowledgement", [("lava_test", "0"), ("production", "1")])
+def test_destructive_suite_refuses_unsafe_target(monkeypatch, name, acknowledgement):
+    monkeypatch.setenv("LAVA_INTEGRATION", "1")
+    monkeypatch.setenv("LAVA_TEST_DATABASE_RESET", acknowledgement)
+    monkeypatch.setenv("LAVA_DATABASE_URL", f"postgresql+psycopg://test:test@localhost/{name}")
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("No migration command may run before the safety guard")
+
+    monkeypatch.setattr(subprocess, "run", forbidden)
+    with pytest.raises(pytest.fail.Exception, match="Destructive tests require"):
+        test_migration_round_trip()
