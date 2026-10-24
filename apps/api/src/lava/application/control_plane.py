@@ -71,6 +71,9 @@ class ControlPlane:
         if service.desired_state == "archived":
             raise ControlPlaneError(409, "archived", "Archived resources cannot be modified")
         for key, value in changes.items():
+            if key == "resources":
+                # PATCH only changes supplied resource keys, including an empty no-op.
+                value = {**service.resources, **value}
             setattr(service, key, value)
         self._commit()
         return service

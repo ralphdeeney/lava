@@ -1,19 +1,19 @@
 """Independent ownership/authentication attacks against disposable real PostgreSQL."""
 
-from datetime import UTC, datetime, timedelta
-from hashlib import sha256
 import json
 import logging
 import secrets
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from uuid import uuid4
 
 import pytest
 from sqlalchemy.orm import Session
-
-from lava.auth.credentials import issue_credential, revoke_credential
-from lava.db.base import ApiCredential, LEGACY_OWNER_ID, Project, Service, User
 from test_control_plane import control_plane as control_plane
 from test_control_plane import create_project, create_service
+
+from lava.auth.credentials import issue_credential, revoke_credential
+from lava.db.base import LEGACY_OWNER_ID, ApiCredential, Project, Service, User
 
 pytestmark = pytest.mark.integration
 
@@ -28,11 +28,17 @@ def test_unauthenticated_projects_are_denied(control_plane):
     }
 
 
-@pytest.mark.parametrize("authorization", [
-    "", "Basic dXNlcjpwYXNz", "Bearer", "Bearer invalid",
-    "Bearer lava_" + "x" * 42,
-    "Bearer lava_" + "x" * 44,
-])
+@pytest.mark.parametrize(
+    "authorization",
+    [
+        "",
+        "Basic dXNlcjpwYXNz",
+        "Bearer",
+        "Bearer invalid",
+        "Bearer lava_" + "x" * 42,
+        "Bearer lava_" + "x" * 44,
+    ],
+)
 def test_invalid_authorization_never_establishes_identity(control_plane, authorization):
     response = control_plane.client.get("/projects", headers={"Authorization": authorization})
     assert response.status_code == 401
@@ -41,7 +47,9 @@ def test_invalid_authorization_never_establishes_identity(control_plane, authori
 
 def test_unknown_well_formed_bearer_is_rejected(control_plane):
     candidate = "lava_" + secrets.token_urlsafe(32)
-    response = control_plane.client.get("/projects", headers={"Authorization": "Bearer " + candidate})
+    response = control_plane.client.get(
+        "/projects", headers={"Authorization": "Bearer " + candidate}
+    )
     assert response.status_code == 401
     assert candidate not in response.text
 
@@ -63,7 +71,8 @@ def test_client_identity_cannot_override_authenticated_owner(control_plane):
     assert created.status_code == 201
     assert created.json()["owner_id"] == fixture.user_a.id
     forged = fixture.client.post(
-        "/projects", headers=fixture.headers_a,
+        "/projects",
+        headers=fixture.headers_a,
         json={"name": "forged-owner", "owner_id": fixture.user_b.id},
     )
     assert forged.status_code == 422
@@ -77,12 +86,17 @@ def test_only_credential_digest_is_persisted(control_plane):
     with Session(fixture.engine) as session:
         stored = session.get(ApiCredential, fixture.credential_a.id)
         assert stored is not None
-        assert stored.token_hash == sha256(fixture.token_a.encode()).hexdigest()
-        assert len(stored.token_hash) == 64
-        assert stored.token_hash != fixture.token_a
+        valid_digest = (
+            stored.token_hash == sha256(fixture.token_a.encode()).hexdigest()
+            and len(stored.token_hash) == 64
+            and stored.token_hash != fixture.token_a
+        )
+        assert valid_digest, "Credential storage must contain only its SHA256 digest"
     response = fixture.client.get("/projects", headers=fixture.headers_a)
     assert response.status_code == 200
-    assert fixture.token_a not in response.text
+    assert all(value not in response.text for value in (fixture.token_a,)), (
+        "API response exposed an issued credential"
+    )
 
 
 @pytest.mark.parametrize("state", ["expired", "revoked", "inactive-user"])
@@ -140,13 +154,15 @@ def test_other_user_cannot_modify_service(control_plane):
     service = create_service(fixture, project["id"])
     path = f"/projects/{project['id']}/services/{service['id']}"
     for method, kwargs in (
-        ("get", {}), ("patch", {"json": {"resources": {"cpu": 16.0, "memory_mb": 65536}}}),
+        ("get", {}),
+        ("patch", {"json": {"resources": {"cpu": 16.0, "memory_mb": 65536}}}),
         ("delete", {}),
     ):
         response = getattr(fixture.client, method)(path, headers=fixture.headers_b, **kwargs)
         assert response.status_code == 404
     unauthorized_create = fixture.client.post(
-        f"/projects/{project['id']}/services", headers=fixture.headers_b,
+        f"/projects/{project['id']}/services",
+        headers=fixture.headers_b,
         json={"name": "intruder", "service_type": "worker"},
     )
     assert unauthorized_create.status_code == 404
@@ -164,11 +180,16 @@ def test_service_id_cannot_cross_project_boundary(control_plane):
     service = create_service(fixture, first["id"])
     wrong_parent = f"/projects/{second['id']}/services/{service['id']}"
     for method, kwargs in (
-        ("get", {}), ("patch", {"json": {"name": "reparented"}}), ("delete", {}),
+        ("get", {}),
+        ("patch", {"json": {"name": "reparented"}}),
+        ("delete", {}),
     ):
-        assert getattr(fixture.client, method)(
-            wrong_parent, headers=fixture.headers_a, **kwargs
-        ).status_code == 404
+        assert (
+            getattr(fixture.client, method)(
+                wrong_parent, headers=fixture.headers_a, **kwargs
+            ).status_code
+            == 404
+        )
     with Session(fixture.engine) as session:
         assert session.get(Service, service["id"]).project_id == first["id"]
 
@@ -182,10 +203,12 @@ def test_unauthorized_errors_do_not_enumerate_resources(control_plane):
     assert existing_project.status_code == absent_project.status_code == 404
     assert existing_project.json() == absent_project.json()
     existing_service = fixture.client.get(
-        f"/projects/{project['id']}/services/{service['id']}", headers=fixture.headers_b,
+        f"/projects/{project['id']}/services/{service['id']}",
+        headers=fixture.headers_b,
     )
     absent_service = fixture.client.get(
-        f"/projects/{uuid4()}/services/{uuid4()}", headers=fixture.headers_b,
+        f"/projects/{uuid4()}/services/{uuid4()}",
+        headers=fixture.headers_b,
     )
     assert existing_service.status_code == absent_service.status_code == 404
     assert existing_service.json() == absent_service.json()
@@ -197,13 +220,18 @@ def test_service_cannot_be_reparented_or_resurrected_by_payload(control_plane):
     second = create_project(fixture, "second")
     service = create_service(fixture, first["id"])
     path = f"/projects/{first['id']}/services/{service['id']}"
-    injected_parent = fixture.client.patch(path, headers=fixture.headers_a,
-                                            json={"project_id": second["id"]})
+    injected_parent = fixture.client.patch(
+        path, headers=fixture.headers_a, json={"project_id": second["id"]}
+    )
     assert injected_parent.status_code == 422
     archived = fixture.client.delete(path, headers=fixture.headers_a)
     assert archived.status_code == 200
-    assert fixture.client.patch(path, headers=fixture.headers_a,
-                                json={"desired_state": "running"}).status_code == 409
+    assert (
+        fixture.client.patch(
+            path, headers=fixture.headers_a, json={"desired_state": "running"}
+        ).status_code
+        == 409
+    )
     with Session(fixture.engine) as session:
         stored = session.get(Service, service["id"])
         assert stored.project_id == first["id"]
@@ -214,8 +242,11 @@ def test_service_cannot_be_reparented_or_resurrected_by_payload(control_plane):
 def test_description_sql_text_is_metadata_not_executable(control_plane):
     fixture = control_plane
     description = "'; DROP TABLE users; --"
-    response = fixture.client.post("/projects", headers=fixture.headers_a,
-                                   json={"name": "safe-sql-text", "description": description})
+    response = fixture.client.post(
+        "/projects",
+        headers=fixture.headers_a,
+        json={"name": "safe-sql-text", "description": description},
+    )
     assert response.status_code == 201
     assert response.json()["description"] == description
     assert fixture.client.get("/projects", headers=fixture.headers_a).status_code == 200
@@ -227,13 +258,15 @@ def test_description_sql_text_is_metadata_not_executable(control_plane):
 def test_errors_and_logs_do_not_disclose_bearer_or_database_credentials(control_plane, caplog):
     fixture = control_plane
     database_canary = "postgresql+psycopg://canary:do-not-disclose@db/private"
+    query_canary = "query-sensitive-canary"
     with caplog.at_level(logging.INFO):
         invalid = fixture.client.post(
-            "/projects", headers=fixture.headers_a,
+            "/projects",
+            headers=fixture.headers_a,
             json={"name": "invalid", "token": fixture.token_a, "database_url": database_canary},
         )
         unauthorized = fixture.client.get(
-            "/projects?token=" + fixture.token_a,
+            "/projects?token=" + query_canary,
             headers={"Authorization": "Bearer invalid"},
         )
     assert invalid.status_code == 422
@@ -242,6 +275,7 @@ def test_errors_and_logs_do_not_disclose_bearer_or_database_credentials(control_
         record.getMessage() for record in caplog.records if record.name.startswith("lava")
     )
     combined = json.dumps([invalid.json(), unauthorized.json()]) + application_logs
-    assert all(value not in combined for value in (fixture.token_a, database_canary, "do-not-disclose")), (
-        "A credential canary appeared in the API response or application logs"
-    )
+    assert all(
+        value not in combined
+        for value in (fixture.token_a, database_canary, "do-not-disclose", query_canary)
+    ), "A credential canary appeared in the API response or application logs"

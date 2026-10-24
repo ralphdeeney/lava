@@ -3,7 +3,7 @@
   "private": false,
   "auto_merge_enabled": true,
   "main_protected": true,
-  "protection_verified": false,
+  "protection_verified": true,
   "errors": {
     "repository": null,
     "branch": null,
@@ -13,9 +13,7 @@
   "protected_automerge_ready": false,
   "metadata_only": true,
   "blockers": [
-    "Active ruleset has zero required status checks: CI/security/integration/evaluation are not enforced.",
-    "Ruleset update denied403; approved Administration read/write connection or owner configuration required.",
-    "No verified protected privileged execution/merge controller."
+    "Native protected merge baseline verified; this offline metadata record is not an authenticated autonomous controller. Unreviewed PR code still cannot access infrastructure credentials."
   ],
   "administration_attempts": [
     {
@@ -41,14 +39,22 @@
   "rulesets_observed": [
     {
       "id": 25796131,
-      "name": "LAVA Main Protection",
       "enforcement": "active",
       "bypass_actors": [],
-      "required_status_checks": [],
-      "strict_required_status_checks_policy": false
+      "required_status_checks": [
+        {
+          "context": "engineering-controls",
+          "integration_id": 15368
+        },
+        {
+          "context": "checks",
+          "integration_id": 15368
+        }
+      ],
+      "strict_required_status_checks_policy": true
     }
   ],
   "visibility_restriction_resolved": true,
   "alternate_admin_connection": "none configured; current GH_TOKEN account only",
-  "supported_next_step": "Owner grants repository Administration read/write to an approved GitHub connection, or applies rules in GitHub Settings; no credentials in chat."
+  "supported_next_step": "Develop only authorized slice, verify exact-head CI and independent review before native squash auto-merge."
 }

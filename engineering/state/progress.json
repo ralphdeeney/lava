@@ -1,116 +1,35 @@
 {
   "project": "LAVA",
   "phase": "01",
-  "slice": "pipeline prerequisites (before01.1)",
-  "branch": "feat/autonomous-phase01-pipeline",
-  "checkpoint_source_commit": "80376a829e789dfd550c4c517c4aefcd98f9e312",
-  "current_commit_command": "git rev-parse HEAD; CI artifacts bind their exact workflow SHA",
-  "implementation_status": "BLOCKED_EXTERNAL",
-  "interface_status": "VERIFIED",
+  "slice": "01.1",
+  "branch": "feat/phase01-slice01-control-plane",
+  "base_commit": "aae350a6cf2ed10bea09f9ec4aa3075ae038d0a8",
+  "implementation_status": "REPAIR",
   "repair_attempts": 1,
-  "persistent_coding_runner": "unavailable/not provisioned",
-  "background_coding_active": false,
+  "prior_pipeline_repair_attempts": 1,
+  "slice_record": "engineering/state/slice01.1.json",
   "phase00": {
     "pr": "https://github.com/ralphdeeney/lava/pull/1",
     "state": "MERGED",
     "merge_commit": "284547ce6fc7ae69f5633262831981c25fefcd8c"
   },
-  "pr_url": "https://github.com/ralphdeeney/lava/pull/2",
-  "merge_state": "OPEN_READY_FOR_REVIEW_BLOCKED_UNMERGED",
-  "auto_merge_enabled": false,
-  "verification": {
-    "local_full_suite": {
-      "passed": 118,
-      "failed": 0,
-      "skipped": 0,
-      "source_commit": "80376a829e789dfd550c4c517c4aefcd98f9e312"
-    },
-    "post_repair_full_runs": 1,
-    "ruff": "passed",
-    "format": "passed",
-    "svelte_errors": 0,
-    "frontend_build": "passed",
-    "security": {
-      "scope": "corrected offline interfaces",
-      "reviewer": "independent specialist",
-      "remaining_scoped_blockers": 0
-    },
-    "phase01_evals": {
-      "mandatory_total": 20,
-      "passed": 0,
-      "failed": 0,
-      "skipped": 0,
-      "not_run": 20,
-      "release_ready": false
-    },
-    "phase01_browser": {
-      "status": "not_run",
-      "reason": "Product not implemented; prerequisite policy blocked"
-    },
-    "phase01_instabox": {
-      "status": "not_run",
-      "reason": "Do not expose infrastructure credentials or persistent VM to unreviewed candidates"
-    },
-    "engineering_ci": {
-      "source_commit": "2a6acb1c680b5640ce8ab06a0a4cda64cd6b3ef9",
-      "status": "passed",
-      "url": "https://github.com/ralphdeeney/lava/actions/runs/40115879400",
-      "scope": "offline interface unit tests only"
-    }
+  "pipeline_pr": {
+    "number": 2,
+    "state": "MERGED",
+    "merge_commit": "aae350a6cf2ed10bea09f9ec4aa3075ae038d0a8"
   },
-  "blockers": [
-    {
-      "type": "external_authorization",
-      "message": "Ruleset25796131 exists with no bypass actors, but required_status_checks is empty and strict updates false. Supported PUT correction denied403. Repository native auto-merge enabled; PR auto-merge withheld until checks enforced."
-    },
-    {
-      "type": "security_prerequisite",
-      "message": "No protected-main trusted execution/merge controller; existing Phase00 VM runner must not approve arbitrary Phase01 candidates."
-    }
-  ],
-  "next_authorized_action": "Require actual CI contexts in active ruleset via approved Administration-capable connection or owner settings, verify trusted integration/security gates, then enable PR2 squash auto-merge. Product slices remain blocked until actual merge.",
-  "phase01_slices": {
-    "01.1": "NOT_STARTED_DEPENDENCY_BLOCKED",
-    "01.2": "NOT_STARTED_DEPENDENCY_BLOCKED",
-    "01.3": "NOT_STARTED_DEPENDENCY_BLOCKED",
-    "01.4": "NOT_STARTED_DEPENDENCY_BLOCKED",
-    "01.5": "NOT_STARTED_DEPENDENCY_BLOCKED",
-    "01.6": "NOT_STARTED_DEPENDENCY_BLOCKED",
-    "01.7": "NOT_STARTED_DEPENDENCY_BLOCKED",
-    "01.8": "NOT_STARTED_DEPENDENCY_BLOCKED"
-  },
-  "phase02_ready": false,
-  "repository_visibility": "public",
-  "public_resumption": {
-    "source_commit": "47595bf617a3e50b26735d5dab675ecff96660f9",
-    "visibility_restriction_resolved": true,
-    "main_protected": false,
-    "auto_merge_enabled": false,
-    "administration_attempts": [
-      {
-        "mechanism": "REST branch protection read",
-        "status": 403,
-        "result": "Resource not accessible by integration"
-      },
-      {
-        "mechanism": "REST repository ruleset creation",
-        "status": 403,
-        "result": "Resource not accessible by integration"
-      },
-      {
-        "mechanism": "GraphQL createBranchProtectionRule",
-        "result": "FORBIDDEN: Resource not accessible by integration"
-      }
-    ]
-  },
-  "repository_auto_merge_enabled": true,
-  "ruleset_resumption": {
-    "source_commit": "01f9fac65918af9915fc291a2650a4bc8642f587",
+  "main_protection": {
     "ruleset_id": 25796131,
-    "required_status_checks": [],
-    "native_auto_merge_enabled": true,
-    "pr_ready_for_review": true,
-    "ruleset_update_status": 403,
-    "new_code_repairs": 0
-  }
+    "enforcement": "active",
+    "required_checks": [
+      "engineering-controls",
+      "checks"
+    ],
+    "strict": true,
+    "bypass_actors": []
+  },
+  "persistent_coding_runner": "unavailable/not provisioned",
+  "background_coding_active": false,
+  "next_slice": "01.2 not started; requires01.1 verified and merged",
+  "phase02_ready": false
 }

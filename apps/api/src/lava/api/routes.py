@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from lava.api.schemas import (
+    ErrorResponse,
     ProjectCreate,
     ProjectPatch,
     ProjectView,
@@ -17,7 +18,16 @@ from lava.auth.dependencies import current_user
 from lava.db.base import User
 from lava.persistence.database import get_session
 
-router = APIRouter(tags=["control-plane"])
+router = APIRouter(
+    tags=["control-plane"],
+    responses={
+        401: {"model": ErrorResponse, "description": "Authentication required"},
+        404: {"model": ErrorResponse, "description": "Resource not found"},
+        409: {"model": ErrorResponse, "description": "Resource state conflict"},
+        422: {"model": ErrorResponse, "description": "Invalid request"},
+        503: {"model": ErrorResponse, "description": "Persistence unavailable"},
+    },
+)
 Principal = Annotated[User, Depends(current_user)]
 Database = Annotated[Session, Depends(get_session)]
 Limit = Annotated[int, Query(ge=1, le=100)]

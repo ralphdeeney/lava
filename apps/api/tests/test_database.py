@@ -36,9 +36,12 @@ def test_migration_round_trip():
             )
         try:
             with engine.connect() as connection:
-                assert connection.execute(
-                    text("SELECT owner_id FROM projects WHERE id = :id"), {"id": project_id}
-                ).scalar_one() == owner_id
+                assert (
+                    connection.execute(
+                        text("SELECT owner_id FROM projects WHERE id = :id"), {"id": project_id}
+                    ).scalar_one()
+                    == owner_id
+                )
         finally:
             # Remove only this write probe before exercising a deliberately safe downgrade.
             with engine.begin() as connection:
@@ -67,7 +70,6 @@ def test_destructive_suite_refuses_unsafe_target(monkeypatch, name, acknowledgem
         test_migration_round_trip()
 
 
-
 @pytest.mark.integration
 def test_legacy_project_is_preserved_by_owner_migration():
     if os.environ.get("LAVA_INTEGRATION") != "1":
@@ -76,6 +78,7 @@ def test_legacy_project_is_preserved_by_owner_migration():
     if os.environ.get("LAVA_TEST_DATABASE_RESET") != "1" or not database.endswith("_test"):
         pytest.fail("Destructive tests require LAVA_TEST_DATABASE_RESET=1 and a *_test database")
     from lava.db.base import LEGACY_OWNER_ID
+
     api_root = Path(__file__).resolve().parents[1]
     subprocess.run(["alembic", "upgrade", "head"], cwd=api_root, check=True)
     subprocess.run(["alembic", "downgrade", "0001"], cwd=api_root, check=True)
@@ -84,10 +87,13 @@ def test_legacy_project_is_preserved_by_owner_migration():
     name = "legacy-" + uuid4().hex
     try:
         with engine.begin() as connection:
-            connection.execute(text("INSERT INTO projects (id, name) VALUES (:id, :name)"),
-                               {"id": project_id, "name": name})
-            created_at = connection.execute(text("SELECT created_at FROM projects WHERE id = :id"),
-                                           {"id": project_id}).scalar_one()
+            connection.execute(
+                text("INSERT INTO projects (id, name) VALUES (:id, :name)"),
+                {"id": project_id, "name": name},
+            )
+            created_at = connection.execute(
+                text("SELECT created_at FROM projects WHERE id = :id"), {"id": project_id}
+            ).scalar_one()
         subprocess.run(["alembic", "upgrade", "head"], cwd=api_root, check=True)
         subprocess.run(["alembic", "upgrade", "head"], cwd=api_root, check=True)
         with engine.connect() as connection:
@@ -98,10 +104,19 @@ def test_legacy_project_is_preserved_by_owner_migration():
             assert project.name == name
             assert project.owner_id == LEGACY_OWNER_ID
             assert project.created_at == created_at
-            assert connection.execute(text("SELECT is_active FROM users WHERE id = :id"),
-                                      {"id": LEGACY_OWNER_ID}).scalar_one() is False
-            assert connection.execute(text("SELECT count(*) FROM api_credentials WHERE user_id = :id"),
-                                      {"id": LEGACY_OWNER_ID}).scalar_one() == 0
+            assert (
+                connection.execute(
+                    text("SELECT is_active FROM users WHERE id = :id"), {"id": LEGACY_OWNER_ID}
+                ).scalar_one()
+                is False
+            )
+            assert (
+                connection.execute(
+                    text("SELECT count(*) FROM api_credentials WHERE user_id = :id"),
+                    {"id": LEGACY_OWNER_ID},
+                ).scalar_one()
+                == 0
+            )
         assert check_database(Settings()) is True
         subprocess.run(["alembic", "check"], cwd=api_root, check=True)
         subprocess.run(["alembic", "downgrade", "0001"], cwd=api_root, check=True)
@@ -118,10 +133,15 @@ def test_legacy_project_is_preserved_by_owner_migration():
         engine.dispose()
 
 
-
 @pytest.mark.integration
-@pytest.mark.parametrize("field,value", [("description", "Metadata must survive"),
-                                          ("lifecycle_status", "archived")])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("description", "Metadata must survive"),
+        ("lifecycle_status", "archived"),
+        ("updated_at", "increment"),
+    ],
+)
 def test_edited_legacy_metadata_blocks_lossy_downgrade(field, value):
     if os.environ.get("LAVA_INTEGRATION") != "1":
         pytest.skip("set LAVA_INTEGRATION=1 with a disposable PostgreSQL database")
@@ -135,21 +155,32 @@ def test_edited_legacy_metadata_blocks_lossy_downgrade(field, value):
     project_id = str(uuid4())
     try:
         with engine.begin() as connection:
-            connection.execute(text("INSERT INTO projects (id, name) VALUES (:id, :name)"),
-                               {"id": project_id, "name": "edited-legacy-" + uuid4().hex})
+            connection.execute(
+                text("INSERT INTO projects (id, name) VALUES (:id, :name)"),
+                {"id": project_id, "name": "edited-legacy-" + uuid4().hex},
+            )
         subprocess.run(["alembic", "upgrade", "head"], cwd=api_root, check=True)
         statements = {
             "description": text("UPDATE projects SET description = :value WHERE id = :id"),
-            "lifecycle_status": text("UPDATE projects SET lifecycle_status = :value WHERE id = :id"),
+            "lifecycle_status": text(
+                "UPDATE projects SET lifecycle_status = :value WHERE id = :id"
+            ),
+            "updated_at": text(
+                "UPDATE projects SET updated_at = updated_at + INTERVAL '1 second' WHERE id = :id"
+            ),
         }
         with engine.begin() as connection:
             connection.execute(statements[field], {"value": value, "id": project_id})
-        result = subprocess.run(["alembic", "downgrade", "0001"], cwd=api_root,
-                                capture_output=True, text=True)
+        result = subprocess.run(
+            ["alembic", "downgrade", "0001"], cwd=api_root, capture_output=True, text=True
+        )
         assert result.returncode != 0
         assert "Downgrade refused" in result.stdout + result.stderr
         with engine.connect() as connection:
-            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0002"
+            assert (
+                connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                == "0002"
+            )
     finally:
         # Delete only this test's legacy row, even when the current buggy guard downgraded it.
         with engine.begin() as connection:

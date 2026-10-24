@@ -117,7 +117,11 @@ def downgrade() -> None:
             "SELECT EXISTS(SELECT 1 FROM services) "
             "OR EXISTS(SELECT 1 FROM api_credentials) "
             "OR EXISTS(SELECT 1 FROM projects WHERE owner_id != :legacy) "
-            "OR EXISTS(SELECT 1 FROM users WHERE id != :legacy)"
+            "OR EXISTS(SELECT 1 FROM users WHERE id != :legacy) "
+            "OR EXISTS(SELECT 1 FROM projects WHERE owner_id = :legacy AND ("
+            "description != '' OR lifecycle_status != 'active' "
+            "OR updated_at IS DISTINCT FROM "
+            "(SELECT created_at FROM users WHERE id = :legacy)))"
         ),
         {"legacy": LEGACY_OWNER_ID},
     ).scalar_one()
