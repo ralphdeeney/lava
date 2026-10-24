@@ -1,0 +1,17 @@
+{
+  "project": "LAVA",
+  "phase": "01",
+  "slice": "01.1",
+  "scope": "User-authorized Projects, Services, Ownership and Authorization control-plane API; supersedes schema-only slice",
+  "branch": "feat/phase01-slice01-control-plane",
+  "base_commit": "aae350a6cf2ed10bea09f9ec4aa3075ae038d0a8",
+  "status": "IMPLEMENT",
+  "repair_attempts": 0,
+  "prior_pipeline_repair_attempts": 1,
+  "verification_runs": [],
+  "pr_url": null,
+  "merge_state": "NOT_OPENED",
+  "instabox": "not_run; candidate credential-bearing dispatch prohibited; observe trusted main workflow only after independently reviewed merge",
+  "background_coding_active": false,
+  "next_slice": "01.2 blocked until this slice verified and merged"
+}

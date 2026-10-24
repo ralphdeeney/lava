@@ -13,3 +13,6 @@ build/
 engineering-test-results.xml
 evals/reports/*.json
 engineering/reports/
+
+# Generated test evidence
+test-results/

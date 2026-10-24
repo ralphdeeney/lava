@@ -193,3 +193,59 @@ No persistent coding runner exists. See engineering/README.md for the executable
 interfaces, real GitHub-policy observation and blocked checkpoint. The Phase01 evaluation
 catalog is a specification with20 not-run cases, not evidence of application functionality.
 Protected merge policy and a trusted infrastructure-controller boundary must be resolved first.
+
+## Slice01.1: owned project/service APIs
+
+Use the existing Compose setup (`./scripts/bootstrap.sh`, `docker compose up --build --wait`).
+Migration0002 preserves existing projects, assigning them to a disabled quarantine identity.
+No existing project becomes accessible to a newly provisioned user automatically. The new
+API remains bound to loopback and has no Docker socket or deployment execution.
+
+Provision a disposable local API identity in a private terminal:
+
+```sh
+docker compose exec api python -m lava.auth.provision create alice --ttl-hours 24
+```
+
+Store the returned token in a secure API client's credential store and use the HTTP
+`Authorization: Bearer` scheme. Do not paste it in URLs, source, chat, shared logs or shell
+history. Provision another identity to exercise isolation. The CLI needs trusted database
+access; it is not a public registration endpoint. Token expiry and revocation take effect
+on subsequent requests. See [ADR0001](docs/adr/0001-control-plane-authentication.md).
+
+API resources (authenticated; identifiers are UUIDs):
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| POST / GET | `/projects` | Create / list own projects (bounded pagination) |
+| GET / PATCH / DELETE | `/projects/{project_id}` | Retrieve / update / archive |
+| POST / GET | `/projects/{project_id}/services` | Create / list services under owned project |
+| GET / PATCH / DELETE | `/projects/{project_id}/services/{service_id}` | Retrieve / update / archive |
+
+Project input includes `name` and optional `description`. Service input includes `name`,
+`service_type` (`web`, `api`, `worker`, `database`), `resources` (`cpu`, `memory_mb`), and optional
+`desired_state` (`stopped`, `running`). Desired state is metadata only. No container is started.
+Archive is idempotent; archived records remain readable and names reserved. Updates and child
+creation under archived parents are rejected. No DELETE endpoint removes physical rows,
+persistent volumes or deployed resources. Cross-owner and wrong-project service lookups return
+404. Missing/invalid credentials return401; invalid input422; duplicates/lifecycle conflicts409.
+Errors do not echo input bodies, bearer tokens or database exception details.
+
+To revoke, use the credential identifier returned by provisioning (not the token):
+
+```sh
+docker compose exec api python -m lava.auth.provision revoke CREDENTIAL_UUID
+```
+
+The migration history is preserved. Upgrade is repeatable. Downgrading an empty/quarantined
+legacy schema is supported; rollback refuses data loss once new owned projects, credentials or
+services exist. Back up and use a reviewed forward migration for operational recovery. Do not
+remove persistent records just to force a downgrade. Production DB-role separation, HTTPS and
+browser/account authentication are still prerequisites for public deployment.
+
+The independent real-PostgreSQL API suite requires a newly allocated disposable `*_test` DB
+and both existing safety flags. It covers ownership, CRUD, invalid/duplicate configuration,
+archive behavior, token expiry/revocation, constraints and rollback. CI publishes actual JUnit
+results and a scoped evaluation report; unimplemented Phase01 scenarios remain `not_run`.
+The trusted-main InstaBox workflow verifies the squash-merge commit after independent review;
+no unreviewed PR is dispatched with infrastructure credentials.

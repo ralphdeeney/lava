@@ -11,7 +11,8 @@ LAVA begins as a modular monolith with a separately built SvelteKit dashboard.
 The API owns control-plane HTTP endpoints and persistence. Health is independent of the database;
 readiness requires a successful query and the expected migration revision. A one-shot migration
 service runs before the API. There is no automatic schema creation on API startup.
-The initial projects table establishes migration discipline; no project/deployment API exists yet.
+The initial projects table established migration discipline; migration0002 now adds the owned
+project/service control-plane API. No deployment execution API exists.
 
 Phase 01 will add application services and domain modules here without reorganizing the tree.
 Railpack + BuildKit adapters will implement BuildEngine. A separate worker will invoke those
@@ -23,4 +24,20 @@ No Railpack, BuildKit daemon, Traefik or worker service is installed in Phase 00
 
 Compose publishes frontend/API on host loopback only. PostgreSQL has no host port.
 A browser can load the dashboard independently of API readiness; the page intentionally makes
-no claim about live deployment state. No public deployment or authentication surface exists.
+no claim about live deployment state. No deployment execution or browser account/session surface exists.
+
+## Slice01.1 control-plane boundary
+
+Projects and services now live in the same modular monolith. Domain enums describe lifecycle
+and service categories; application services enforce ownership and legal archive behavior;
+persistence adapters provide request-scoped SQLAlchemy sessions; API schemas/routes provide
+validated HTTP contracts. UUID ownership foreign keys and scope-specific unique constraints
+are enforced in PostgreSQL. The existing migration0001 remains intact;0002 extends its schema
+and quarantines legacy records under a disabled identity. Health stays unauthenticated;
+readiness verifies the new schema revision.
+
+Authentication is an expiring/revocable opaque bearer credential resolved through its SHA256
+digest to an active persistent user, provisioned outside public HTTP. This is a minimal API
+boundary, not the future browser account/session product. See ADR0001 for the trust model.
+No API service imports/invokes Docker, runtime, build or routing adapters. Service desired-state
+changes describe metadata only; DELETE archives metadata and cannot destroy infrastructure.
