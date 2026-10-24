@@ -1,0 +1,29 @@
+[
+  {
+    "id": "EVAL-007",
+    "category": "services",
+    "mandatory": true,
+    "title": "Create development and production environments",
+    "assertions": "distinct project-scoped persisted relationships",
+    "critical": false,
+    "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
+  },
+  {
+    "id": "EVAL-008",
+    "category": "services",
+    "mandatory": true,
+    "title": "Register a Railpack-configured service",
+    "assertions": "validated metadata only; no container execution",
+    "critical": false,
+    "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
+  },
+  {
+    "id": "EVAL-009",
+    "category": "services",
+    "mandatory": true,
+    "title": "Reject malformed service configuration",
+    "assertions": "structured422 and no invalid persisted row",
+    "critical": false,
+    "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
+  }
+]

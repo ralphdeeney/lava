@@ -1,0 +1,47 @@
+[
+  {
+    "id": "EVAL-003",
+    "category": "authorization",
+    "mandatory": true,
+    "title": "Reject unauthenticated project access",
+    "assertions": "401 without resource disclosure",
+    "critical": true,
+    "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
+  },
+  {
+    "id": "EVAL-005",
+    "category": "authorization",
+    "mandatory": true,
+    "title": "User B cannot access User A private project",
+    "assertions": "consistent404 or403 without enumeration",
+    "critical": true,
+    "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
+  },
+  {
+    "id": "EVAL-006",
+    "category": "authorization",
+    "mandatory": true,
+    "title": "User B cannot modify User A service",
+    "assertions": "denied and persisted configuration unchanged",
+    "critical": true,
+    "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
+  },
+  {
+    "id": "EVAL-016",
+    "category": "authorization",
+    "mandatory": true,
+    "title": "Unauthorized API requests fail safely",
+    "assertions": "cross-user authorization and safe response contracts",
+    "critical": true,
+    "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
+  },
+  {
+    "id": "EVAL-017",
+    "category": "authorization",
+    "mandatory": true,
+    "title": "Errors do not expose credentials",
+    "assertions": "no password/session/database URL in responses or sanitized evidence",
+    "critical": true,
+    "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
+  }
+]

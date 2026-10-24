@@ -1,0 +1,20 @@
+[
+  {
+    "id": "EVAL-010",
+    "category": "deployments",
+    "mandatory": true,
+    "title": "Persist deployment metadata",
+    "assertions": "immutable source/configuration snapshot and valid initial state",
+    "critical": false,
+    "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
+  },
+  {
+    "id": "EVAL-011",
+    "category": "deployments",
+    "mandatory": true,
+    "title": "Reject illegal deployment-state transitions",
+    "assertions": "explicit transition matrix; no normal-user mutation",
+    "critical": true,
+    "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
+  }
+]

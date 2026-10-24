@@ -9,3 +9,7 @@ node_modules/
 .svelte-kit/
 build/
 *.egg-info/
+
+engineering-test-results.xml
+evals/reports/*.json
+engineering/reports/
