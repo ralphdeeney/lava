@@ -4,7 +4,7 @@
   "slice": "01.2",
   "branch": "feat/phase01-slice02-browser-auth",
   "base_commit": "2c78551bd9ecfd144a114c20c3716d07440a083f",
-  "implementation_status": "REPAIR",
+  "implementation_status": "BLOCKED",
   "repair_attempts": 1,
   "prior_pipeline_repair_attempts": 1,
   "slice_record": "engineering/state/slice01.2.json",
@@ -30,7 +30,7 @@
   },
   "persistent_coding_runner": "unavailable/not provisioned",
   "background_coding_active": false,
-  "next_slice": "01.3 not started; requires01.2 verified and merged",
+  "next_slice": "01.3 blocked;01.2 browser logout failed after only allowed repair",
   "phase02_ready": false,
   "previous_slice_verification": {
     "full_suite": {
@@ -43,5 +43,18 @@
     "security_blocking_findings": 0,
     "compose": "passed",
     "instabox": "passed run40167400907 at merge2c78551"
+  },
+  "tested_source_commit": "3e50c363dda42b94d34a59450009c55e5ecb185a",
+  "release_ready": false,
+  "verification": {
+    "backend_engineering_passed": 269,
+    "browser_passed": 12,
+    "browser_failed": 4,
+    "eval_passed": 9,
+    "eval_blocked": 4,
+    "eval_not_run": 7,
+    "compose": "passed",
+    "security_merge_blockers": 1,
+    "instabox": "not_run blocked candidate"
   }
 }

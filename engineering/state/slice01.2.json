@@ -4,7 +4,7 @@
   "slice": "01.2",
   "branch": "feat/phase01-slice02-browser-auth",
   "base_commit": "2c78551bd9ecfd144a114c20c3716d07440a083f",
-  "status": "REPAIR",
+  "status": "BLOCKED",
   "repair_attempts": 1,
   "previous_slice": {
     "pr": 3,
@@ -54,12 +54,69 @@
         "raw pytest failure diagnostics can expose disposable test session material; initial artifacts private only",
         "3 long migration-test SQL strings"
       ]
+    },
+    {
+      "stage": "single_retest",
+      "source_commit": "3e50c363dda42b94d34a59450009c55e5ecb185a",
+      "source_tree_clean": true,
+      "backend_and_engineering": {
+        "passed": 269,
+        "failed": 0,
+        "skipped": 0
+      },
+      "browser": {
+        "total": 16,
+        "passed": 12,
+        "failed": 4,
+        "skipped": 0,
+        "desktop": {
+          "passed": 6,
+          "failed": 2
+        },
+        "mobile": {
+          "passed": 6,
+          "failed": 2
+        },
+        "failed_scenarios": [
+          "logout invalidates current session",
+          "logout all revokes other browser sessions"
+        ],
+        "report_sha256": "0ea9af1d151e799e6f5743d47b3236ca28c0cd9356731eba3301572683474d03"
+      },
+      "ruff": "passed",
+      "format": "passed",
+      "svelte": "0 errors,0 warnings",
+      "production_build": "passed",
+      "e2e_types": "passed",
+      "compose": "passed HTTP/PostgreSQL/migrations/schema/nonroot/owned cleanup",
+      "evaluations": {
+        "passed": 9,
+        "blocked": 4,
+        "not_run": 7,
+        "eligible": false,
+        "note": "Failed global browser report rejected; actual execution16/12/4 is recorded separately, not zero tests."
+      },
+      "junit_sha256": "3d7e6ad4bd898fd44107865e053827a84eec4f730ffaa6799445091dc35b4e4e"
     }
   ],
   "browser": "not_run before source freeze",
-  "instabox": "candidate not_run; reviewed merge SHA via trusted-main only",
+  "instabox": "not_run: blocked candidate cannot be merged/dispatched with infrastructure credentials",
   "background_coding_active": false,
   "next_slice": "01.3 not started; requires01.2 verified and merged",
   "repair": "One aggregate: normalize UTC expiry, require Secure for every HTTPS origin, sanitize pytest output/JUnit while preserving status and metadata, assert real POST login form instead of removed placeholder, regression tests and style.",
-  "next_action": "Exactly one clean-source full retest; any remaining failure blocks slice and01.3."
+  "next_action": "Publish draft PR and actual CI evidence. No auto-merge, additional code repair/retest, candidate VM dispatch or01.3.",
+  "tested_source_commit": "3e50c363dda42b94d34a59450009c55e5ecb185a",
+  "release_ready": false,
+  "merge_eligible": false,
+  "security_review": {
+    "status": "BLOCKED",
+    "critical_findings": 0,
+    "merge_blocking_findings": 1,
+    "remaining_finding": "Quoted empty deletion cookie rejected by frontend; logout action returns503 instead of redirect after backend revocation."
+  },
+  "remaining_blocker": {
+    "path": "apps/web/src/lib/server/api.ts",
+    "cause": "Starlette delete_cookie produces lava_session=\"\"; Max-Age=0; strict token validator rejects quoted empty value before Svelte cookie can be cleared.",
+    "future_remediation": "Separately authorized repair should recognize validated empty deletion cookies without relaxing live token validation and add direct parser regressions. No implementation under current exhausted budget."
+  }
 }
