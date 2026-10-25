@@ -6,10 +6,10 @@ on:
 permissions:
   contents: read
 jobs:
-  fixture-builds:
+  worker-prerequisites:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17.9-bookworm@sha256:47f917f7409eacd22fc5dfb1dee634e1b55cf0c01d1a7eb701be2227a03e0641
@@ -22,7 +22,6 @@ jobs:
           --health-cmd "pg_isready -U lava -d lava_test"
           --health-interval 3s --health-timeout 3s --health-retries 20
     env:
-      LAVA_TRUSTED_FIXTURE_CI: "1"
       LAVA_INTEGRATION: "1"
       LAVA_TEST_DATABASE_RESET: "1"
       LAVA_DATABASE_URL: postgresql+psycopg://lava:ci-only-password@127.0.0.1:5432/lava_test
@@ -41,13 +40,30 @@ jobs:
           uv run --project apps/api --locked python scripts/run_pytest.py
           --cwd apps/api --junit test-results/worker-reliability.xml
           -- tests/test_worker_reliability.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: worker-prerequisite-evidence-${{ github.sha }}
+          path: apps/api/test-results/worker-reliability.xml
+          retention-days: 7
+  fixture-builds:
+    needs: worker-prerequisites
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      LAVA_TRUSTED_FIXTURE_CI: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-docker-action@v4
+        with:
+          daemon-config: |
+            {"features":{"containerd-snapshotter":true}}
       - name: Build audited Python, Node and Go fixtures
         run: python3 scripts/verify_fixture_builds.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: trusted-fixture-build-evidence-${{ github.sha }}
-          path: |
-            test-results/fixture-builds.json
-            apps/api/test-results/worker-reliability.xml
+          path: test-results/fixture-builds.json
           retention-days: 7
