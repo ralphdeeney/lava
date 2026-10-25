@@ -61,6 +61,22 @@ deployment metadata, dashboard/user journeys and hardening as separately accepte
 No customer-container execution or Phase02 work is authorized here. A failing postmerge
 InstaBox run blocks advancement and must be reported without automatic destructive rollback.
 
+## Current 01.3 authorization
+
+Slice 01.2 merged through PR #4 at `658a0071852d62e25bd1ac51bae4a2e2ff06e872`.
+Its final repair commit `b039baa633fc90701a71293c2742e3fee7c644e6` passed all 16
+real browser journeys and 13 applicable evaluations. The trusted merged-main InstaBox run
+`40189820206` passed. The previously committed Slice 01.2 checkpoint describes its earlier
+blocked state; the final exception and release evidence are recorded on PR #4.
+
+The authorized Slice 01.3 adds project memberships, Owner/Admin/Developer/Viewer permissions,
+identity-bound invitations for existing users, project environments and environment-scoped
+service configuration metadata. Preserve the 01.2 session boundary and existing data. No
+deployment execution is authorized. The remaining seven broader catalog cases after 01.2 are
+EVAL-007/008/010/011/018/019/020; run applicable cases with real evidence, and retain
+unrelated deployment cases as not_run. Do not begin the next slice before this slice passes
+and actually merges.
+
 ## Current01.2 authorization
 
 Slice01.1 actually merged in PR3 at2c78551bd9ecfd144a114c20c3716d07440a083f; its actual trusted

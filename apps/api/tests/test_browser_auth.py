@@ -34,9 +34,12 @@ def browser_auth(monkeypatch):
     from lava.db.base import (
         ApiCredential,
         BrowserSession,
+        Environment,
         LoginAttempt,
         PasswordAccount,
         Project,
+        ProjectInvitation,
+        ProjectMembership,
         Service,
         User,
     )
@@ -69,6 +72,13 @@ def browser_auth(monkeypatch):
         with engine.begin() as connection:
             projects = select(Project.id).where(Project.owner_id.in_(ids))
             connection.execute(delete(Service).where(Service.project_id.in_(projects)))
+            connection.execute(
+                delete(ProjectInvitation).where(ProjectInvitation.project_id.in_(projects))
+            )
+            connection.execute(
+                delete(ProjectMembership).where(ProjectMembership.project_id.in_(projects))
+            )
+            connection.execute(delete(Environment).where(Environment.project_id.in_(projects)))
             connection.execute(delete(Project).where(Project.owner_id.in_(ids)))
             for model in (BrowserSession, PasswordAccount, ApiCredential):
                 connection.execute(delete(model).where(model.user_id.in_(ids)))

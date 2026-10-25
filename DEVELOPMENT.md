@@ -293,3 +293,31 @@ Raw logs remain under ignored harness-private paths; public sanitized outcomes a
 `test-results/e2e/public`. No traces/videos or credentials are published. The private account
 file is removed and owned users/projects/services/sessions cleaned even after ordinaryfailure.
 Do not upload the entire test-results directory. CI publishes only explicit sanitized paths.
+
+## Slice 01.3: collaboration and environments
+
+Start with `./scripts/bootstrap.sh` and the existing loopback-bound Compose stack. Apply
+`alembic upgrade head` before starting the updated API; readiness requires migration0004.
+The migration backfills each existing project's Owner membership and leaves previous services
+unassigned to an environment. Do not reset a persistent database or delete existing rows to
+upgrade. `alembic downgrade` refuses if new membership, invitation, environment or changed
+service configuration data would be lost.
+
+Provision each collaborator with the existing private account command, then use the project's
+Members page to add an existing user or create an invitation. The invitee sees their own
+pending invitations after login and accepts or declines while authenticated. No email or
+public registration is configured. Owner/Admin can manage non-owner memberships. Developer
+can edit service and environment metadata; Viewer can only read. See ADR0003 for the full
+server-enforced matrix and invitation trust model.
+
+The Environments page creates, lists and archives development, staging, production or custom
+environment metadata. A service may point to an environment in its own project and may record
+validated build preference, start command, branch, resource limits and desired replicas. These
+settings do not execute deployments. Do not put secrets in the configuration fields; this slice
+provides no environment-variable secret store.
+
+The disposable `*_test` PostgreSQL suite verifies migration0004, membership/role integrity,
+invitation lifecycle, tenant isolation and service/environment foreign keys. The browser
+verifier exercises the real API/web processes and publishes only sanitized outcome metadata.
+Candidate code runs on GitHub-hosted CI without InstaBox secrets; the serialized trusted-main
+workflow verifies the merge SHA on the VM after protected merge.

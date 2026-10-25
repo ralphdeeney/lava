@@ -27,6 +27,13 @@ BROWSER_NAMES = (
     "unsafe next redirects stay on this application",
     "keyboard navigation and responsive layout",
 )
+TENANCY_BROWSER_NAMES = (
+    "invited developer gains access and loses it immediately on revocation",
+    "viewer can read but cannot mutate project resources",
+    "admin manages members without gaining owner authority",
+    "project environments stay isolated and archived metadata is immutable",
+    "declined and revoked invitations cannot be accepted",
+)
 PROJECTS = ("desktop", "mobile")
 AUTH_MAPPINGS = {
     "EVAL-001": "test_browser_login_and_session_are_authenticated",
@@ -87,7 +94,9 @@ def read_browser(path: Path, sha: str) -> dict:
             raise ValueError("Browser testcase fields must be sanitized and explicit")
         if item["status"] not in ("passed", "failed", "skipped"):
             raise ValueError("Unknown browser execution status")
-        if not isinstance(item["name"], str) or item["name"] not in BROWSER_NAMES:
+        if not isinstance(item["name"], str) or item["name"] not in (
+            BROWSER_NAMES + TENANCY_BROWSER_NAMES
+        ):
             raise ValueError("Unknown browser scenario")
         if item["project"] not in PROJECTS:
             raise ValueError("Unknown browser project")
@@ -198,7 +207,7 @@ def reconcile(cases, junit, browser_report, sha, *, source_tree_clean):
     browser_tests = (browser or {}).get("tests", [])
     expected = {(name, project) for name in BROWSER_NAMES for project in PROJECTS}
     observed = {(item["name"], item["project"]) for item in browser_tests}
-    browser_complete = expected == observed and all(
+    browser_complete = expected.issubset(observed) and all(
         item["status"] == "passed" for item in browser_tests
     )
     guard_results = {}

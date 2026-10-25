@@ -28,3 +28,29 @@ private local diagnostics are excluded from Actions artifacts. Screenshots are w
 credential checks fail and mask input fields. Screenshots alone cannot pass an evaluation.
 The trusted-main InstaBox workflow verifies only reviewed merged sources, never untrusted PR
 checkout code with infrastructure credentials. Report that exact merge SHA separately.
+
+## Slice 01.3 membership and environment evaluation
+
+`evals/runners/tenancy.py` extends the previous source-bound reconciliation with real
+PostgreSQL assertions for project-scoped environment uniqueness/isolation (EVAL-007) and
+Railpack-preference service metadata (EVAL-008). It requires all 26 fixed browser outcomes
+(13 named journeys in both desktop and mobile viewports), including invitations, role changes,
+revocation, read-only access and archived environment behavior. Four named backend tenancy
+security guards for immediate revocation, final-owner protection, role escalation and
+single-use/expired/revoked invitations must also pass. Missing, failed, skipped, dirty, stale,
+unknown or simulated evidence blocks Slice 01.3. Parser unit fixtures are synthetic and are
+never reported as actual browser execution.
+
+The catalog still has 20 mandatory Phase 01 scenarios. When all applicable Slice 01.3
+evidence passes, its scoped score is **15 applicable passes**: the 13 established cases plus
+EVAL-007 and EVAL-008. EVAL-010 and EVAL-011 require future deployment metadata. EVAL-018
+requires exact-source fresh-machine/Compose evidence, EVAL-019 a real PostgreSQL-outage
+readiness assertion, and EVAL-020 scoped cleanup evidence. Those five remain `not_run` in
+the offline tenancy report unless separate exact-source executed evidence is reconciled;
+workflow definitions or historical VM runs do not count as a pass. The full Phase 01 release
+remains unready while any mandatory case has no evidence.
+
+The browser verifier provisions five random disposable users in a dedicated acknowledged
+`*_test` PostgreSQL database and deletes only their owned projects, memberships, invitations,
+environments, services, credentials and sessions. No invitation token or account credential is
+published in sanitized reports. Existing 16 Slice 01.2 browser outcomes remain required.

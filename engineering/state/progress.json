@@ -1,13 +1,13 @@
 {
   "project": "LAVA",
   "phase": "01",
-  "slice": "01.2",
-  "branch": "feat/phase01-slice02-browser-auth",
-  "base_commit": "2c78551bd9ecfd144a114c20c3716d07440a083f",
-  "implementation_status": "BLOCKED",
+  "slice": "01.3",
+  "branch": "feat/phase01-slice03-tenancy-environments",
+  "base_commit": "658a0071852d62e25bd1ac51bae4a2e2ff06e872",
+  "implementation_status": "RETEST_PENDING",
   "repair_attempts": 1,
   "prior_pipeline_repair_attempts": 1,
-  "slice_record": "engineering/state/slice01.2.json",
+  "slice_record": "engineering/state/slice01.3.json",
   "phase00": {
     "pr": "https://github.com/ralphdeeney/lava/pull/1",
     "state": "MERGED",
@@ -30,31 +30,31 @@
   },
   "persistent_coding_runner": "unavailable/not provisioned",
   "background_coding_active": false,
-  "next_slice": "01.3 blocked;01.2 browser logout failed after only allowed repair",
+  "next_slice": "01.3 in progress; do not start dependent slice",
   "phase02_ready": false,
   "previous_slice_verification": {
-    "full_suite": {
-      "passed": 203,
-      "failed": 0,
-      "skipped": 0
-    },
-    "applicable_evals_passed": 9,
-    "phase_evals_not_run": 11,
+    "slice": "01.2",
+    "pr": 4,
+    "merge_commit": "658a0071852d62e25bd1ac51bae4a2e2ff06e872",
+    "browser_passed": 16,
+    "browser_failed": 0,
+    "applicable_evals_passed": 13,
+    "broader_evals_not_run": 7,
     "security_blocking_findings": 0,
-    "compose": "passed",
-    "instabox": "passed run40167400907 at merge2c78551"
+    "instabox": "passed run40189820206"
   },
-  "tested_source_commit": "3e50c363dda42b94d34a59450009c55e5ecb185a",
+  "tested_source_commit": "1602b376dea6b0a3906015dc2c284f8634baa50e",
   "release_ready": false,
   "verification": {
-    "backend_engineering_passed": 269,
-    "browser_passed": 12,
-    "browser_failed": 4,
-    "eval_passed": 9,
-    "eval_blocked": 4,
-    "eval_not_run": 7,
-    "compose": "passed",
-    "security_merge_blockers": 1,
-    "instabox": "not_run blocked candidate"
+    "status": "initial_failed",
+    "backend_unit_passed": 37,
+    "postgresql_passed": 107,
+    "postgresql_failed": 5,
+    "engineering_passed": 142,
+    "browser_passed": 24,
+    "browser_failed": 2,
+    "compose": "failed local proxy CA",
+    "security_source_review": "passed zero blockers",
+    "next": "one aggregate repair committed; one full retest pending"
   }
 }

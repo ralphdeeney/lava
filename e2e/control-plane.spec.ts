@@ -1,4 +1,4 @@
-import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type APIResponse, type BrowserContext, type Page } from '@playwright/test';
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync, statSync, mkdirSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
@@ -12,8 +12,8 @@ function accounts(): Account[] {
     throw new Error('A private, operator-provisioned disposable-account fixture is required');
   }
   const users = JSON.parse(readFileSync(file, 'utf8')).users as Account[];
-  if (!Array.isArray(users) || users.length !== 2 || users.some(user => !user.id || !user.username || !user.password)) {
-    throw new Error('Two isolated disposable users are required');
+  if (!Array.isArray(users) || users.length !== 5 || users.some(user => !user.id || !user.username || !user.password)) {
+    throw new Error('Five isolated disposable users are required');
   }
   return users;
 }
@@ -68,6 +68,47 @@ async function createService(page: Page, projectId: string): Promise<{ id: strin
   await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}\/services\/[0-9a-f-]{36}$/);
   await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
   return { id: new URL(page.url()).pathname.split('/').at(-1)!, name };
+}
+
+async function mutateAPI(page: Page, path: string, method: 'POST' | 'PATCH' | 'DELETE', data: object = {}): Promise<APIResponse> {
+  const session = await page.request.get('/api/auth/session');
+  expect(session.status()).toBe(200);
+  const csrf = (await session.json()).csrf_token as string;
+  return page.request.fetch(`/api${path}`, {
+    method, data, headers: { Origin: new URL(page.url()).origin, 'X-CSRF-Token': csrf },
+  });
+}
+
+async function invite(page: Page, project: { id: string; name: string }, account: Account, role: 'admin' | 'developer' | 'viewer'): Promise<void> {
+  await page.goto(`/projects/${project.id}/members`);
+  await page.getByLabel('Username', { exact: true }).fill(account.username);
+  await page.getByLabel('Username', { exact: true }).focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByLabel('Role', { exact: true })).toBeFocused();
+  await page.getByLabel('Role', { exact: true }).selectOption(role);
+  await page.getByRole('button', { name: 'Invite member', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('Invitation created');
+}
+
+async function respondToInvitation(page: Page, project: { name: string }, decision: 'Accept' | 'Decline'): Promise<void> {
+  await page.goto('/invitations');
+  const card = page.locator('li.resource-card').filter({ hasText: project.name });
+  await expect(card).toBeVisible();
+  await card.getByRole('button', { name: `${decision} invitation` }).click();
+  await expect(page.getByRole('status')).toContainText(
+    decision === 'Accept' ? 'Invitation accepted' : 'Invitation declined',
+  );
+}
+
+async function createEnvironment(page: Page, projectId: string, name: string, slug: string): Promise<string> {
+  await page.goto(`/projects/${projectId}/environments`);
+  await page.getByRole('link', { name: 'Create environment', exact: true }).first().click();
+  await page.getByLabel('Name', { exact: true }).fill(name);
+  await page.getByLabel('Slug', { exact: true }).fill(slug);
+  await page.getByRole('button', { name: 'Create environment', exact: true }).click();
+  await expect(page).toHaveURL(/\/environments\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+  return new URL(page.url()).pathname.split('/').at(-1)!;
 }
 
 async function checkSafeScreenshot(page: Page, context: BrowserContext, name: string): Promise<void> {
@@ -217,4 +258,168 @@ test('keyboard navigation and responsive layout', async ({ page }) => {
   await expect(page.getByRole('navigation')).toBeVisible();
   const fits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
   expect(fits).toBe(true);
+});
+
+test('invited developer gains access and loses it immediately on revocation', async ({ page, browser }) => {
+  test.setTimeout(90_000);
+  const [owner, developer] = accounts();
+  await login(page, owner);
+  const project = await createProject(page);
+  await invite(page, project, developer, 'viewer');
+  const memberContext = await browser.newContext({ baseURL: process.env.LAVA_E2E_BASE_URL, viewport: page.viewportSize() ?? undefined });
+  try {
+    const member = await memberContext.newPage();
+    await login(member, developer);
+    await respondToInvitation(member, project, 'Accept');
+    await page.goto(`/projects/${project.id}/members`);
+    const role = page.getByLabel(`Role for ${developer.username}`);
+    await role.selectOption('developer');
+    await role.locator('xpath=ancestor::form').getByRole('button', { name: 'Save role' }).click();
+    await expect(page.getByRole('status')).toContainText('Role updated');
+    const service = await createService(member, project.id);
+    const stagingId = await createEnvironment(member, project.id, 'Staging', 'staging');
+    await member.goto(`/projects/${project.id}/services/${service.id}`);
+    await member.getByLabel('Associated environment').selectOption(stagingId);
+    await member.getByLabel('Build method').selectOption('railpack');
+    await member.getByLabel('Deployment branch').fill('develop');
+    await member.getByLabel('Desired replicas').fill('2');
+    await member.getByRole('button', { name: 'Save configuration' }).click();
+    await expect(member.getByRole('status')).toContainText('Configuration saved');
+    await member.reload();
+    await expect(member.getByLabel('Associated environment')).toHaveValue(stagingId);
+    await expect(member.getByLabel('Deployment branch')).toHaveValue('develop');
+    const persisted = await member.request.get(`/api/projects/${project.id}/services/${service.id}`);
+    expect(persisted.status()).toBe(200);
+    expect((await persisted.json()).build_method).toBe('railpack');
+    await page.goto(`/projects/${project.id}/members`);
+    page.once('dialog', dialog => dialog.accept());
+    const row = page.locator('li.resource-card').filter({ has: page.getByRole('heading', { name: developer.username }) });
+    await row.getByRole('button', { name: 'Revoke access' }).click();
+    await expect(page.getByRole('status')).toContainText('Access revoked');
+    await member.goto(`/projects/${project.id}`);
+    await expect(member.getByRole('heading', { name: /not found|not available|unavailable/i })).toBeVisible();
+    expect((await member.request.get(`/api/projects/${project.id}`)).status()).toBe(404);
+    expect((await member.request.get(`/api/projects/${project.id}/services/${service.id}`)).status()).toBe(404);
+  } finally { await memberContext.close(); }
+});
+
+test('viewer can read but cannot mutate project resources', async ({ page, browser }) => {
+  test.setTimeout(75_000);
+  const [owner, , viewer, , stranger] = accounts();
+  await login(page, owner);
+  const project = await createProject(page);
+  await invite(page, project, viewer, 'viewer');
+  const viewContext = await browser.newContext({ baseURL: process.env.LAVA_E2E_BASE_URL, viewport: page.viewportSize() ?? undefined });
+  const strangerContext = await browser.newContext({ baseURL: process.env.LAVA_E2E_BASE_URL, viewport: page.viewportSize() ?? undefined });
+  try {
+    const viewPage = await viewContext.newPage();
+    await login(viewPage, viewer);
+    await respondToInvitation(viewPage, project, 'Accept');
+    await viewPage.goto(`/projects/${project.id}`);
+    await expect(viewPage.getByRole('heading', { name: project.name })).toBeVisible();
+    await expect(viewPage.getByRole('link', { name: 'Create service' })).toHaveCount(0);
+    await viewPage.goto(`/projects/${project.id}/members`);
+    await expect(viewPage.getByRole('heading', { name: 'Members', exact: true })).toBeVisible();
+    await expect(viewPage.getByRole('heading', { name: viewer.username })).toBeVisible();
+    await expect(viewPage.getByRole('heading', { name: 'Invite member' })).toHaveCount(0);
+    expect(await viewPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    const environmentsBefore = await viewPage.request.get(`/api/projects/${project.id}/environments`);
+    const servicesBefore = await viewPage.request.get(`/api/projects/${project.id}/services`);
+    expect(environmentsBefore.status()).toBe(200);
+    expect(servicesBefore.status()).toBe(200);
+    expect((await mutateAPI(viewPage, `/projects/${project.id}/environments`, 'POST', { name: 'No', slug: 'no' })).status()).toBe(404);
+    expect((await mutateAPI(viewPage, `/projects/${project.id}/services`, 'POST', {
+      name: 'No', service_type: 'api', desired_state: 'stopped', resources: { cpu: 1, memory_mb: 512 },
+    })).status()).toBe(404);
+    const environmentsAfter = await viewPage.request.get(`/api/projects/${project.id}/environments`);
+    const servicesAfter = await viewPage.request.get(`/api/projects/${project.id}/services`);
+    expect(await environmentsAfter.json()).toEqual(await environmentsBefore.json());
+    expect(await servicesAfter.json()).toEqual(await servicesBefore.json());
+    const strangerPage = await strangerContext.newPage();
+    await login(strangerPage, stranger);
+    expect((await strangerPage.request.get(`/api/projects/${project.id}`)).status()).toBe(404);
+    await strangerPage.goto(`/projects/${project.id}`);
+    await expect(strangerPage.getByRole('heading', { name: /not found|not available|unavailable/i })).toBeVisible();
+  } finally { await viewContext.close(); await strangerContext.close(); }
+});
+
+test('admin manages members without gaining owner authority', async ({ page, browser }) => {
+  test.setTimeout(75_000);
+  const [owner, , viewer, admin] = accounts();
+  await login(page, owner);
+  const project = await createProject(page);
+  await invite(page, project, admin, 'admin');
+  const adminContext = await browser.newContext({ baseURL: process.env.LAVA_E2E_BASE_URL, viewport: page.viewportSize() ?? undefined });
+  try {
+    const adminPage = await adminContext.newPage();
+    await login(adminPage, admin);
+    await respondToInvitation(adminPage, project, 'Accept');
+    await invite(adminPage, project, viewer, 'viewer');
+    const duplicate = await mutateAPI(adminPage, `/projects/${project.id}/invitations`, 'POST', { username: viewer.username, role: 'viewer' });
+    expect([400, 409]).toContain(duplicate.status());
+    const grantOwner = await mutateAPI(adminPage, `/projects/${project.id}/members`, 'POST', { username: viewer.username, role: 'owner' });
+    expect([403, 422]).toContain(grantOwner.status());
+    const members = await page.request.get(`/api/projects/${project.id}/members`);
+    expect(members.status()).toBe(200);
+    const ownerMembership = (await members.json()).find((member: { role: string }) => member.role === 'owner');
+    expect(ownerMembership).toBeTruthy();
+    const finalOwnerRemoval = await mutateAPI(page, `/projects/${project.id}/members/${ownerMembership.id}`, 'DELETE');
+    expect([403, 409]).toContain(finalOwnerRemoval.status());
+    expect((await page.request.get(`/api/projects/${project.id}`)).status()).toBe(200);
+  } finally { await adminContext.close(); }
+});
+
+test('project environments stay isolated and archived metadata is immutable', async ({ page }) => {
+  test.setTimeout(75_000);
+  await login(page, accounts()[0]);
+  const first = await createProject(page);
+  const developmentId = await createEnvironment(page, first.id, 'Development', 'development');
+  const productionId = await createEnvironment(page, first.id, 'Production', 'production');
+  expect(developmentId).not.toBe(productionId);
+  const second = await createProject(page);
+  const secondDevelopmentId = await createEnvironment(page, second.id, 'Development', 'development');
+  expect(secondDevelopmentId).not.toBe(developmentId);
+  expect((await page.request.get(`/api/projects/${second.id}/environments/${developmentId}`)).status()).toBe(404);
+  await page.goto(`/projects/${first.id}/environments/${developmentId}`);
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Archive environment' }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${first.id}/environments$`));
+  const archived = await page.request.get(`/api/projects/${first.id}/environments/${developmentId}`);
+  expect(archived.status()).toBe(200);
+  expect((await archived.json()).lifecycle_status).toBe('archived');
+  const refused = await mutateAPI(page, `/projects/${first.id}/environments/${developmentId}`, 'PATCH', { name: 'Undeclared' });
+  expect([403, 409]).toContain(refused.status());
+  expect((await page.request.get(`/api/projects/${first.id}/environments/${productionId}`)).status()).toBe(200);
+});
+
+test('declined and revoked invitations cannot be accepted', async ({ page, browser }) => {
+  test.setTimeout(75_000);
+  const [owner, developer, viewer] = accounts();
+  await login(page, owner);
+  const project = await createProject(page);
+  await invite(page, project, developer, 'viewer');
+  const pending = await page.request.get(`/api/projects/${project.id}/invitations`);
+  expect(pending.status()).toBe(200);
+  const first = (await pending.json()).find((invitation: { invitee_name: string }) => invitation.invitee_name === developer.username);
+  expect(first).toBeTruthy();
+  const devContext = await browser.newContext({ baseURL: process.env.LAVA_E2E_BASE_URL, viewport: page.viewportSize() ?? undefined });
+  const viewContext = await browser.newContext({ baseURL: process.env.LAVA_E2E_BASE_URL, viewport: page.viewportSize() ?? undefined });
+  try {
+    const devPage = await devContext.newPage();
+    await login(devPage, developer);
+    await respondToInvitation(devPage, project, 'Decline');
+    expect([400, 403, 404, 409]).toContain((await mutateAPI(devPage, `/invitations/${first.id}/accept`, 'POST')).status());
+    await invite(page, project, viewer, 'viewer');
+    const pendingAgain = await page.request.get(`/api/projects/${project.id}/invitations`);
+    const second = (await pendingAgain.json()).find((invitation: { invitee_name: string; status: string }) => invitation.invitee_name === viewer.username && invitation.status === 'pending');
+    expect(second).toBeTruthy();
+    await page.goto(`/projects/${project.id}/members`);
+    const row = page.locator('li.resource-card').filter({ has: page.getByRole('heading', { name: viewer.username }) });
+    await row.getByRole('button', { name: 'Revoke invitation' }).click();
+    await expect(page.getByRole('status')).toContainText('Invitation revoked');
+    const viewPage = await viewContext.newPage();
+    await login(viewPage, viewer);
+    expect([400, 403, 404, 409]).toContain((await mutateAPI(viewPage, `/invitations/${second.id}/accept`, 'POST')).status());
+    expect((await viewPage.request.get(`/api/projects/${project.id}`)).status()).toBe(404);
+  } finally { await devContext.close(); await viewContext.close(); }
 });

@@ -17,8 +17,11 @@ from lava.auth.accounts import provision_account
 from lava.db.base import (
     ApiCredential,
     BrowserSession,
+    Environment,
     PasswordAccount,
     Project,
+    ProjectInvitation,
+    ProjectMembership,
     Service,
     User,
 )
@@ -74,7 +77,9 @@ def main() -> int:
         )
         engine = create_engine(url)
         with Session(engine) as session:
-            for _ in range(2):
+            # Owner, developer, viewer, admin and an unrelated user are isolated
+            # disposable identities; no shared or default account is required.
+            for _ in range(5):
                 name = "e2e-" + secrets.token_hex(12)
                 password = secrets.token_urlsafe(32)
                 user = provision_account(session, name, password)
@@ -188,6 +193,19 @@ def main() -> int:
                     projects = select(Project.id).where(Project.owner_id.in_(ids))
                     connection.execute(
                         delete(Service).where(Service.project_id.in_(projects))
+                    )
+                    connection.execute(
+                        delete(ProjectInvitation).where(
+                            ProjectInvitation.project_id.in_(projects)
+                        )
+                    )
+                    connection.execute(
+                        delete(ProjectMembership).where(
+                            ProjectMembership.project_id.in_(projects)
+                        )
+                    )
+                    connection.execute(
+                        delete(Environment).where(Environment.project_id.in_(projects))
                     )
                     connection.execute(delete(Project).where(Project.owner_id.in_(ids)))
                     for model in (BrowserSession, PasswordAccount, ApiCredential):

@@ -6,13 +6,18 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     UniqueConstraint,
     func,
 )
+from sqlalchemy import (
+    text as sa_text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 LEGACY_OWNER_ID = "00000000-0000-0000-0000-000000000000"
 
@@ -84,6 +89,16 @@ class Service(Base):
     service_type: Mapped[str] = mapped_column(String(20), nullable=False)
     desired_state: Mapped[str] = mapped_column(String(20), nullable=False, server_default="stopped")
     resources: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    environment_id: Mapped[str | None] = mapped_column(
+        ForeignKey("environments.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    build_method: Mapped[str] = mapped_column(String(20), nullable=False, server_default="railpack")
+    start_command: Mapped[str] = mapped_column(String(500), nullable=False, server_default="")
+    deployment_branch: Mapped[str] = mapped_column(
+        String(200), nullable=False, server_default="main"
+    )
+    config_revision: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    desired_replicas: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -92,6 +107,12 @@ class Service(Base):
     )
     __table_args__ = (
         UniqueConstraint("project_id", "name", name="uq_services_project_name"),
+        ForeignKeyConstraint(
+            ["project_id", "environment_id"],
+            ["environments.project_id", "environments.id"],
+            name="fk_service_environment_same_project",
+            ondelete="RESTRICT",
+        ),
         CheckConstraint(
             "service_type IN ('web', 'api', 'worker', 'database')", name="ck_services_type"
         ),
@@ -99,6 +120,11 @@ class Service(Base):
             "desired_state IN ('stopped', 'running', 'archived')", name="ck_services_state"
         ),
         CheckConstraint("length(trim(name)) > 0", name="ck_services_name"),
+        CheckConstraint(
+            "build_method IN ('railpack', 'dockerfile', 'image')", name="ck_services_build_method"
+        ),
+        CheckConstraint("config_revision >= 1", name="ck_services_config_revision"),
+        CheckConstraint("desired_replicas BETWEEN 0 AND 10", name="ck_services_desired_replicas"),
         CheckConstraint(
             "jsonb_typeof(resources) = 'object' "
             "AND resources ? 'cpu' AND resources ? 'memory_mb' "
@@ -112,6 +138,124 @@ class Service(Base):
             "trunc((resources->>'memory_mb')::numeric)",
             name="ck_services_resources",
         ),
+    )
+
+
+class ProjectMembership(Base):
+    __tablename__ = "project_memberships"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="active")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    user: Mapped[User] = relationship(foreign_keys=[user_id])
+
+    @property
+    def user_name(self) -> str:
+        return self.user.name
+
+    __table_args__ = (
+        UniqueConstraint("project_id", "user_id", name="uq_membership_project_user"),
+        CheckConstraint(
+            "role IN ('owner','admin','developer','viewer')", name="ck_membership_role"
+        ),
+        CheckConstraint("status IN ('active','revoked')", name="ck_membership_status"),
+        CheckConstraint(
+            "(status='active' AND revoked_at IS NULL) OR "
+            "(status='revoked' AND revoked_at IS NOT NULL)",
+            name="ck_membership_revocation",
+        ),
+        Index("ix_membership_user_status", "user_id", "status"),
+    )
+
+
+class ProjectInvitation(Base):
+    __tablename__ = "project_invitations"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    invitee_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    inviter_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    invitee: Mapped[User] = relationship(foreign_keys=[invitee_id])
+    project: Mapped[Project] = relationship(foreign_keys=[project_id])
+
+    @property
+    def invitee_name(self) -> str:
+        return self.invitee.name
+
+    @property
+    def project_name(self) -> str:
+        return self.project.name
+
+    __table_args__ = (
+        CheckConstraint("role IN ('admin','developer','viewer')", name="ck_invitation_role"),
+        CheckConstraint(
+            "status IN ('pending','accepted','declined','revoked','expired')",
+            name="ck_invitation_status",
+        ),
+        CheckConstraint("expires_at > created_at", name="ck_invitation_expiry"),
+        Index("ix_invitation_project_status", "project_id", "status"),
+        Index("ix_invitation_invitee_status", "invitee_id", "status"),
+        Index(
+            "uq_pending_invitation_project_invitee",
+            "project_id",
+            "invitee_id",
+            unique=True,
+            postgresql_where=sa_text("status = 'pending'"),
+        ),
+    )
+
+
+class Environment(Base):
+    __tablename__ = "environments"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    slug: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(String(2000), nullable=False, server_default="")
+    lifecycle_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="active"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    __table_args__ = (
+        UniqueConstraint("project_id", "slug", name="uq_environment_project_slug"),
+        UniqueConstraint("project_id", "id", name="uq_environment_project_id"),
+        CheckConstraint(
+            "lifecycle_status IN ('active','archived')", name="ck_environment_lifecycle"
+        ),
+        CheckConstraint("slug ~ '^[a-z][a-z0-9-]{0,99}$'", name="ck_environment_slug"),
     )
 
 

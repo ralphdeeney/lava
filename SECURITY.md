@@ -69,6 +69,28 @@ forward arbitrary identity/proxy headers. Login uses persistent account/peer cou
 uniform unknown-user verification path. No public registration/recovery/default account exists.
 See docs/adr/0002-browser-sessions.md for shared-peer throttling and remaining deployment limits.
 
+## Slice 01.3 tenant threats and controls
+
+Project reads and writes recheck active membership on every request; a valid session or bearer
+token alone does not grant project access. The application permission matrix denies by default.
+Member changes and resource writes lock the project row, preventing a revoked role from racing
+a stale write. Owner identity is anchored to `projects.owner_id`; no API can grant, demote or
+remove Owner. Role grants are limited to the assigning member's authority. Cross-project
+resource lookups are scoped by project, and the database enforces same-project environment
+associations. Archived environments reject modification and retain related service records.
+
+Invitations target existing authenticated users. The identifier is not an access token;
+acceptance requires the intended active account, unexpired pending state and valid inviter
+authority. A used, declined or revoked invitation cannot grant access on replay. Pending
+invitations are invalidated when the relevant member loses authority. Cookie-authenticated
+invitation and membership changes still require exact Origin and session-bound CSRF.
+Service configuration excludes plaintext secret values, and invitation responses/logs never
+contain passwords, sessions or privileged infrastructure credentials.
+
+The project owner/developer role model is not a substitute for production database role
+separation. Public TLS termination, scoped database credentials and account recovery remain
+deployment requirements; this slice does not turn on public customer hosting.
+
 Do not publish raw Playwright traces, recordings, network dumps or private fixture/server logs.
 CI artifacts explicitly contain sanitized reports and verified masked screenshots only. No
 infrastructure credential is provided to candidate application/browser tests. Actual InstaBox

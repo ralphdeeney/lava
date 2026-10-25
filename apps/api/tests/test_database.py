@@ -1,5 +1,7 @@
 import os
+import secrets
 import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -129,6 +131,11 @@ def test_legacy_project_is_preserved_by_owner_migration():
         subprocess.run(["alembic", "upgrade", "head"], cwd=api_root, check=True)
     finally:
         with engine.begin() as connection:
+            if "project_memberships" in inspect(engine).get_table_names():
+                connection.execute(
+                    text("DELETE FROM project_memberships WHERE project_id = :id"),
+                    {"id": project_id},
+                )
             connection.execute(text("DELETE FROM projects WHERE id = :id"), {"id": project_id})
         engine.dispose()
 
@@ -179,11 +186,16 @@ def test_edited_legacy_metadata_blocks_lossy_downgrade(field, value):
         with engine.connect() as connection:
             assert (
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "0003"
+                == "0004"
             )
     finally:
         # Delete only this test's legacy row, even when the current buggy guard downgraded it.
         with engine.begin() as connection:
+            if "project_memberships" in inspect(engine).get_table_names():
+                connection.execute(
+                    text("DELETE FROM project_memberships WHERE project_id = :id"),
+                    {"id": project_id},
+                )
             connection.execute(text("DELETE FROM projects WHERE id = :id"), {"id": project_id})
         if "users" not in inspect(engine).get_table_names():
             subprocess.run(["alembic", "upgrade", "head"], cwd=api_root, check=True)
@@ -244,17 +256,136 @@ def test_browser_migration_preserves_existing_owned_metadata():
             )
             assert (
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "0003"
+                == "0004"
             )
     finally:
         with engine.begin() as connection:
             connection.execute(text("DELETE FROM services WHERE id=:id"), {"id": service_id})
+            connection.execute(
+                text("DELETE FROM project_memberships WHERE project_id=:id"), {"id": project_id}
+            )
             connection.execute(text("DELETE FROM projects WHERE id=:id"), {"id": project_id})
             connection.execute(
                 text("DELETE FROM api_credentials WHERE id=:id"), {"id": credential_id}
             )
             connection.execute(text("DELETE FROM users WHERE id=:id"), {"id": owner_id})
         subprocess.run(["alembic", "upgrade", "head"], cwd=API_ROOT, check=True)
+        engine.dispose()
+
+
+@pytest.mark.integration
+def test_tenancy_migration_preserves_browser_era_data_and_blocks_lossy_rollback():
+    from test_control_plane import API_ROOT, require_disposable_database
+
+    from lava.auth.passwords import hash_password
+
+    require_disposable_database()
+    subprocess.run(["alembic", "upgrade", "head"], cwd=API_ROOT, check=True)
+    subprocess.run(["alembic", "downgrade", "0003"], cwd=API_ROOT, check=True)
+    engine = create_engine(os.environ["LAVA_DATABASE_URL"])
+    owner_id, project_id, service_id, session_id = (str(uuid4()) for _ in range(4))
+    account_name = "pre-tenancy-" + uuid4().hex
+    password_hash = hash_password(secrets.token_urlsafe(32))
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text("INSERT INTO users(id,name,is_active) VALUES (:id,:name,true)"),
+                {"id": owner_id, "name": account_name},
+            )
+            connection.execute(
+                text("INSERT INTO password_accounts(user_id,password_hash) VALUES (:id,:digest)"),
+                {"id": owner_id, "digest": password_hash},
+            )
+            connection.execute(
+                text("INSERT INTO projects(id,name,owner_id) VALUES (:id,:name,:owner)"),
+                {"id": project_id, "name": "pre-tenancy", "owner": owner_id},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO services(id,project_id,name,service_type,resources) "
+                    "VALUES (:id,:project,'web','web',CAST(:resources AS jsonb))"
+                ),
+                {"id": service_id, "project": project_id, "resources": '{"cpu":1,"memory_mb":512}'},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO browser_sessions(id,user_id,token_hash,expires_at) "
+                    "VALUES (:id,:owner,:digest,:expiry)"
+                ),
+                {
+                    "id": session_id,
+                    "owner": owner_id,
+                    "digest": secrets.token_hex(32),
+                    "expiry": datetime.now(UTC) + timedelta(hours=1),
+                },
+            )
+        subprocess.run(["alembic", "upgrade", "head"], cwd=API_ROOT, check=True)
+        subprocess.run(["alembic", "upgrade", "head"], cwd=API_ROOT, check=True)
+        subprocess.run(["alembic", "check"], cwd=API_ROOT, check=True)
+        with engine.connect() as connection:
+            assert (
+                connection.execute(
+                    text("SELECT password_hash FROM password_accounts WHERE user_id=:id"),
+                    {"id": owner_id},
+                ).scalar_one()
+                == password_hash
+            )
+            assert (
+                connection.execute(
+                    text("SELECT user_id FROM browser_sessions WHERE id=:id"),
+                    {"id": session_id},
+                ).scalar_one()
+                == owner_id
+            )
+            assert connection.execute(
+                text("SELECT role,status FROM project_memberships WHERE project_id=:id"),
+                {"id": project_id},
+            ).one() == ("owner", "active")
+            assert connection.execute(
+                text(
+                    "SELECT environment_id,build_method,config_revision FROM services WHERE id=:id"
+                ),
+                {"id": service_id},
+            ).one() == (None, "railpack", 1)
+        environment_id = str(uuid4())
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO environments(id,project_id,name,slug) "
+                    "VALUES (:id,:project,'Development','development')"
+                ),
+                {"id": environment_id, "project": project_id},
+            )
+        result = subprocess.run(
+            ["alembic", "downgrade", "0003"],
+            cwd=API_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0
+        assert "Downgrade refused" in result.stdout + result.stderr
+        with engine.connect() as connection:
+            assert (
+                connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                == "0004"
+            )
+    finally:
+        with engine.begin() as connection:
+            connection.execute(text("DELETE FROM services WHERE id=:id"), {"id": service_id})
+            connection.execute(
+                text("DELETE FROM environments WHERE project_id=:id"), {"id": project_id}
+            )
+            connection.execute(
+                text("DELETE FROM project_memberships WHERE project_id=:id"), {"id": project_id}
+            )
+            connection.execute(text("DELETE FROM projects WHERE id=:id"), {"id": project_id})
+            connection.execute(
+                text("DELETE FROM browser_sessions WHERE id=:id"), {"id": session_id}
+            )
+            connection.execute(
+                text("DELETE FROM password_accounts WHERE user_id=:id"), {"id": owner_id}
+            )
+            connection.execute(text("DELETE FROM users WHERE id=:id"), {"id": owner_id})
         engine.dispose()
 
 
@@ -286,7 +417,7 @@ def test_browser_migration_refuses_lossy_downgrade():
         with engine.connect() as connection:
             assert (
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "0003"
+                == "0004"
             )
             assert (
                 connection.execute(

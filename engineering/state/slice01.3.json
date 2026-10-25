@@ -1,0 +1,74 @@
+{
+  "project": "LAVA",
+  "phase": "01",
+  "slice": "01.3",
+  "branch": "feat/phase01-slice03-tenancy-environments",
+  "base_commit": "658a0071852d62e25bd1ac51bae4a2e2ff06e872",
+  "status": "RETEST_PENDING",
+  "repair_attempts": 1,
+  "initial_full_verification": {
+    "source_commit": "1602b376dea6b0a3906015dc2c284f8634baa50e",
+    "source_tree_clean": true,
+    "backend_unit": {
+      "passed": 37,
+      "failed": 0
+    },
+    "postgresql_integration": {
+      "passed": 107,
+      "failed": 5,
+      "skipped": 0
+    },
+    "engineering": {
+      "passed": 142,
+      "failed": 0
+    },
+    "browser": {
+      "total": 26,
+      "passed": 24,
+      "failed": 2,
+      "skipped": 0,
+      "real_api": true,
+      "real_postgresql": true
+    },
+    "ruff": "passed",
+    "format": "passed",
+    "svelte": "passed zero errors/warnings",
+    "production_build": "passed",
+    "e2e_types": "passed",
+    "compose": "failed cloud proxy CA; owned cleanup passed",
+    "evals": {
+      "passed": 0,
+      "failed": 1,
+      "blocked": 14,
+      "not_run": 5,
+      "slice_eligible": false
+    },
+    "github_checks": {
+      "engineering-controls": "passed",
+      "checks": "failed PostgreSQL stage"
+    }
+  },
+  "retest": "pending exact-source full suite",
+  "pull_request": "https://github.com/ralphdeeney/lava/pull/5",
+  "merge_commit": null,
+  "security_review": {
+    "status": "passed_source_review",
+    "critical_findings": 0,
+    "merge_blocking_findings": 0,
+    "tests_executed_by_reviewer": 0
+  },
+  "instabox": "not_run",
+  "evals": {
+    "executed": 0,
+    "passed": 0,
+    "failed": 0,
+    "blocked": 0,
+    "not_run": "pending current-source reconciliation"
+  },
+  "background_coding_active": false,
+  "repair": {
+    "attempt": 1,
+    "aggregate_cause": "Legacy migration tests omitted backfilled owner membership cleanup and assumed intermediate revision despite transactional rollback; browser selector matched two headings; cloud Compose mounted a CA missing the session proxy issuer.",
+    "change": "Scope test cleanup to owned membership rows, assert revision0004 after refused transactional downgrade, use exact Members heading, mount provided cloud proxy CA without disabling TLS."
+  }
+}
