@@ -332,6 +332,17 @@ class DeploymentEvent(Base):
     deployment_id: Mapped[str] = mapped_column(
         ForeignKey("deployments.id", ondelete="CASCADE"), nullable=False
     )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    from_status: Mapped[str | None] = mapped_column(String(20))
+    to_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    message: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "sequence", name="uq_deployment_event_sequence"),
+        Index("ix_deployment_events_deployment_created", "deployment_id", "created_at", "id"),
+    )
 
 
 class DeploymentJob(Base):
@@ -372,17 +383,6 @@ class DeploymentJob(Base):
         ),
         CheckConstraint("lease_generation >= 0", name="ck_deployment_job_generation"),
         Index("ix_deployment_jobs_schedule", "status", "available_at", "priority"),
-    )
-    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
-    from_status: Mapped[str | None] = mapped_column(String(20))
-    to_status: Mapped[str] = mapped_column(String(20), nullable=False)
-    message: Mapped[str | None] = mapped_column(String(500))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    __table_args__ = (
-        UniqueConstraint("deployment_id", "sequence", name="uq_deployment_event_sequence"),
-        Index("ix_deployment_events_deployment_created", "deployment_id", "created_at", "id"),
     )
 
 
