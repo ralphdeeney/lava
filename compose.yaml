@@ -35,6 +35,21 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment: *api_environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: [python, -m, lava.worker]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import lava.worker"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready')"]
       interval: 5s

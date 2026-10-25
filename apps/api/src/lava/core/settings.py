@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     browser_origin: str = "http://localhost:3000"
     cookie_secure: bool = False
     session_ttl_seconds: int = 3600
+    worker_poll_interval_seconds: float = 1.0
+    worker_lease_seconds: int = 60
+    worker_heartbeat_interval_seconds: int = 15
+    worker_max_attempts: int = 3
+    worker_shutdown_grace_seconds: int = 20
+    worker_concurrency: int = 1
 
     @field_validator("browser_origin")
     @classmethod

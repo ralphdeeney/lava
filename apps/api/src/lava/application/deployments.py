@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from lava.application.tenancy import Tenancy
-from lava.db.base import Deployment, DeploymentEvent, Environment, Service
+from lava.db.base import Deployment, DeploymentEvent, DeploymentJob, Environment, Service
 from lava.domain.control_plane import ControlPlaneError
 
 STATUSES = {
@@ -99,6 +99,7 @@ class DeploymentService:
                 message="Deployment queued",
             )
         )
+        self.session.add(DeploymentJob(deployment_id=deployment.id))
         try:
             self.session.commit()
         except IntegrityError:
