@@ -24,6 +24,7 @@
 <a class="back-link" href={`/projects/${data.project.id}`}>← {data.project.name}</a>
 <div class="page-heading"><div><p class="eyebrow">SERVICE CONFIGURATION</p><h1>{data.service.name}</h1></div><span class="badge">{data.service.desired_state}</span></div>
 <p class="muted">Configuration revision {data.service.config_revision ?? 1} · {data.service.environment_id ? (data.environments.find(environment => environment.id === data.service.environment_id)?.name ?? 'Environment') : 'No environment'}</p>
+<p><a class="back-link" href={`/projects/${data.project.id}/services/${data.service.id}/deployments`}>View deployment history ({data.deployments.length})</a></p>
 {#if message}<p role="alert" class="notice">{message}</p>{/if}
 {#if saved}<p role="status" class="success">Configuration saved.</p>{/if}
 <section class="panel form-panel" aria-labelledby="configuration-title">
