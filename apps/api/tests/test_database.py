@@ -10,7 +10,14 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 
 from lava.core.settings import Settings
+from lava.db.base import DeploymentJob
 from lava.main import check_database
+
+
+def test_deployment_job_indexes_match_migration_contract():
+    indexes = {index.name for index in DeploymentJob.__table__.indexes}
+    assert indexes == {"ix_deployment_jobs_schedule"}
+    assert "ix_deployment_jobs_available_at" not in indexes
 
 
 @pytest.mark.integration
