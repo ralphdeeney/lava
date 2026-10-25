@@ -205,6 +205,6 @@ def deployment_events(
         session.scalars(
             select(DeploymentEvent)
             .where(DeploymentEvent.deployment_id == deployment.id)
-            .order_by(DeploymentEvent.created_at, DeploymentEvent.id)
+            .order_by(DeploymentEvent.sequence)
         )
     )

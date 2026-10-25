@@ -3,7 +3,7 @@
 import re
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -52,6 +52,12 @@ class DeploymentService:
         )
         if environment is None or environment.lifecycle_status != "active":
             raise ControlPlaneError(404, "not_found", "Resource not found")
+        values = dict(values)
+        values["environment_id"] = str(values["environment_id"])
+        if service.environment_id != values["environment_id"]:
+            raise ControlPlaneError(409, "environment_conflict", "Service environment mismatch")
+        if values["configuration_revision"] != service.config_revision:
+            raise ControlPlaneError(409, "stale_configuration", "Service configuration changed")
         if not SHA.fullmatch(values["source_commit_sha"]):
             raise ControlPlaneError(422, "invalid_source", "Invalid source commit")
         existing = self.session.scalar(
@@ -69,6 +75,7 @@ class DeploymentService:
                 "source_commit_sha",
                 "source_branch",
                 "configuration_revision",
+                "image_digest",
             }
             if any(getattr(existing, key) != values[key] for key in immutable):
                 raise ControlPlaneError(
@@ -86,7 +93,10 @@ class DeploymentService:
         self.session.flush()
         self.session.add(
             DeploymentEvent(
-                deployment_id=deployment.id, to_status="queued", message="Deployment queued"
+                deployment_id=deployment.id,
+                sequence=0,
+                to_status="queued",
+                message="Deployment queued",
             )
         )
         try:
@@ -103,6 +113,7 @@ class DeploymentService:
         deployment_id: str,
         target: str,
         *,
+        expected_version: int | None = None,
         message: str | None = None,
         failure_code: str | None = None,
     ) -> Deployment:
@@ -119,21 +130,45 @@ class DeploymentService:
             )
         now = datetime.now(UTC)
         previous = deployment.status
-        deployment.status = target
-        deployment.updated_at = now
+        version = deployment.transition_version if expected_version is None else expected_version
+        if version != deployment.transition_version:
+            raise ControlPlaneError(409, "stale_transition", "Deployment transition is stale")
+        sequence = self.session.scalar(
+            select(func.coalesce(func.max(DeploymentEvent.sequence), -1) + 1).where(
+                DeploymentEvent.deployment_id == deployment.id
+            )
+        )
+        values = {
+            "status": target,
+            "transition_version": version + 1,
+            "updated_at": now,
+        }
         if target in {"building", "deploying", "verifying"} and deployment.started_at is None:
-            deployment.started_at = now
+            values["started_at"] = now
         if target in TERMINAL:
-            deployment.finished_at = now
+            values["finished_at"] = now
         if target == "failed":
-            deployment.failure_code = (failure_code or "deployment_failed")[:80]
-            deployment.failure_message = (message or "Deployment failed")[:500]
+            values["failure_code"] = "deployment_failed"
+            values["failure_message"] = "Deployment failed"
+        result = self.session.execute(
+            update(Deployment)
+            .where(
+                Deployment.id == deployment.id,
+                Deployment.status == previous,
+                Deployment.transition_version == version,
+            )
+            .values(**values)
+        )
+        if result.rowcount != 1:
+            self.session.rollback()
+            raise ControlPlaneError(409, "stale_transition", "Deployment transition is stale")
         self.session.add(
             DeploymentEvent(
                 deployment_id=deployment.id,
+                sequence=sequence,
                 from_status=previous,
                 to_status=target,
-                message=(message or "")[:500] or None,
+                message="Deployment state changed",
             )
         )
         self.session.commit()
