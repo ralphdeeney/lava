@@ -1,0 +1,278 @@
+"""Standalone PostgreSQL deployment worker with a deterministic simulated executor."""
+
+from __future__ import annotations
+
+import hashlib
+import secrets
+import signal
+import threading
+import time
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+
+import structlog
+from sqlalchemy import or_, select, update
+from sqlalchemy.orm import Session
+
+from lava.application.deployments import DeploymentService
+from lava.db.base import Deployment, DeploymentJob
+
+log = structlog.get_logger()
+
+
+class LeaseLost(RuntimeError):
+    pass
+
+
+def _hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+class SimulatedExecutor:
+    def __init__(self, outcome: str = "success"):
+        self.outcome = outcome
+
+    def run(self, cancelled: Callable[[], bool]) -> str:
+        if cancelled():
+            return "cancelled"
+        if self.outcome == "timeout":
+            time.sleep(0.01)
+            return "retryable_failure"
+        if self.outcome == "failure":
+            return "failure"
+        return "success"
+
+
+class DeploymentWorker:
+    def __init__(
+        self, session: Session, worker_id: str, lease_seconds: int = 60, max_attempts: int = 3
+    ):
+        self.session = session
+        self.worker_id = worker_id
+        self.lease_seconds = lease_seconds
+        self.max_attempts = max_attempts
+
+    def claim(self) -> tuple[DeploymentJob, str] | None:
+        now = datetime.now(UTC)
+        query = (
+            select(DeploymentJob)
+            .where(
+                or_(
+                    (
+                        DeploymentJob.status.in_(["queued", "retry_wait"])
+                        & (DeploymentJob.available_at <= now)
+                    ),
+                    (DeploymentJob.status == "running") & (DeploymentJob.leased_until < now),
+                )
+            )
+            .order_by(DeploymentJob.priority.desc(), DeploymentJob.available_at, DeploymentJob.id)
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+        job = self.session.scalar(query)
+        if job is None:
+            self.session.rollback()
+            return None
+        token = f"{job.lease_generation + 1}.{secrets.token_urlsafe(32)}"
+        job.status = "running"
+        job.attempt_count += 1
+        job.lease_owner = self.worker_id
+        job.lease_token_hash = _hash(token)
+        job.lease_generation += 1
+        job.leased_until = now + timedelta(seconds=self.lease_seconds)
+        job.heartbeat_at = now
+        job.updated_at = now
+        self.session.commit()
+        return job, token
+
+    def _guarded(self, job_id: str, token: str, values: dict) -> None:
+        now = datetime.now(UTC)
+        result = self.session.execute(
+            update(DeploymentJob)
+            .where(
+                DeploymentJob.id == job_id,
+                DeploymentJob.status == "running",
+                DeploymentJob.lease_owner == self.worker_id,
+                DeploymentJob.lease_token_hash == _hash(token),
+                DeploymentJob.lease_generation == int(token.split(".", 1)[0]),
+                DeploymentJob.leased_until > now,
+            )
+            .values(updated_at=now, **values)
+        )
+        if result.rowcount != 1:
+            self.session.rollback()
+            raise LeaseLost("worker lease is no longer valid")
+        self.session.commit()
+
+    def heartbeat(self, job_id: str, token: str) -> None:
+        now = datetime.now(UTC)
+        self._guarded(
+            job_id,
+            token,
+            {"heartbeat_at": now, "leased_until": now + timedelta(seconds=self.lease_seconds)},
+        )
+
+    def cancel(self, job_id: str) -> None:
+        try:
+            job = self.session.scalar(
+                select(DeploymentJob).where(DeploymentJob.id == job_id).with_for_update()
+            )
+            if job is None or job.status in {"succeeded", "failed", "cancelled"}:
+                self.session.rollback()
+                return
+            job.cancellation_requested_at = datetime.now(UTC)
+            if job.status != "running":
+                deployment = self.session.get(Deployment, job.deployment_id)
+                DeploymentService(self.session).transition(
+                    deployment.id,
+                    "cancelled",
+                    expected_version=deployment.transition_version,
+                    commit=False,
+                )
+                job.status = "cancelled"
+                job.completed_at = datetime.now(UTC)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+
+    def complete(self, job_id: str, token: str, success: bool) -> None:
+        try:
+            job = self.session.scalar(
+                select(DeploymentJob).where(DeploymentJob.id == job_id).with_for_update()
+            )
+            if job is not None:
+                self.session.refresh(job)
+            now = datetime.now(UTC)
+            if (
+                job is None
+                or job.status != "running"
+                or job.lease_owner != self.worker_id
+                or job.lease_token_hash != _hash(token)
+                or job.lease_generation != int(token.split(".", 1)[0])
+                or job.leased_until <= now
+            ):
+                raise LeaseLost("worker lease is no longer valid")
+            deployment = self.session.get(Deployment, job.deployment_id)
+            if deployment is None:
+                raise LeaseLost("deployment not found")
+            targets = (
+                ["cancelled"]
+                if job.cancellation_requested_at
+                else (
+                    ["building", "built", "deploying", "verifying", "active"]
+                    if success
+                    else ["failed"]
+                )
+            )
+            service = DeploymentService(self.session)
+            for target in targets:
+                service.transition(
+                    deployment.id,
+                    target,
+                    expected_version=deployment.transition_version,
+                    commit=False,
+                )
+                self.session.refresh(deployment)
+            job.status = (
+                "cancelled"
+                if job.cancellation_requested_at
+                else ("succeeded" if success else "failed")
+            )
+            job.completed_at = now
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+
+    def process_once(self, executor: SimulatedExecutor | None = None) -> bool:
+        claimed = self.claim()
+        if claimed is None:
+            return False
+        job, token = claimed
+        executor = executor or SimulatedExecutor()
+        stop_heartbeat = threading.Event()
+        lease_lost = threading.Event()
+        engine = self.session.get_bind()
+
+        def renew_lease() -> None:
+            interval = max(0.1, self.lease_seconds / 3)
+            while not stop_heartbeat.wait(interval):
+                try:
+                    with Session(engine) as heartbeat_session:
+                        DeploymentWorker(
+                            heartbeat_session, self.worker_id, self.lease_seconds
+                        ).heartbeat(job.id, token)
+                except Exception as error:
+                    log.warning(
+                        "worker_heartbeat_failed", job_id=job.id, error_type=type(error).__name__
+                    )
+                    lease_lost.set()
+                    return
+
+        heartbeat_thread = threading.Thread(target=renew_lease, daemon=True)
+        heartbeat_thread.start()
+        try:
+            outcome = executor.run(
+                lambda: (
+                    lease_lost.is_set()
+                    or self.session.scalar(
+                        select(DeploymentJob.cancellation_requested_at).where(
+                            DeploymentJob.id == job.id
+                        )
+                    )
+                    is not None
+                )
+            )
+            if lease_lost.is_set():
+                raise LeaseLost("heartbeat failed or lease was reclaimed")
+            if outcome == "cancelled":
+                self.cancel(job.id)
+                self.complete(job.id, token, False)
+            elif outcome == "retryable_failure" and job.attempt_count < min(
+                job.max_attempts, self.max_attempts
+            ):
+                delay = min(300, 2 ** max(0, job.attempt_count - 1))
+                self._guarded(
+                    job.id,
+                    token,
+                    {
+                        "status": "retry_wait",
+                        "available_at": datetime.now(UTC) + timedelta(seconds=delay),
+                        "last_error_code": "simulated_retryable",
+                    },
+                )
+            else:
+                self.complete(job.id, token, outcome == "success")
+        except LeaseLost:
+            log.warning("worker_lease_lost", job_id=job.id, worker_id=self.worker_id)
+        finally:
+            stop_heartbeat.set()
+            heartbeat_thread.join(timeout=max(1, self.lease_seconds / 3 + 1))
+        return True
+
+
+def run_worker(session_factory: Callable[[], Session], worker_id: str) -> None:
+    stop = False
+
+    def request_stop(*_args) -> None:
+        nonlocal stop
+        stop = True
+
+    signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGINT, request_stop)
+    while not stop:
+        with session_factory() as session:
+            if not DeploymentWorker(session, worker_id).process_once():
+                time.sleep(1)
+
+
+if __name__ == "__main__":
+    from uuid import uuid4
+
+    from lava.core.settings import get_settings
+    from lava.persistence.database import engine_for_url
+
+    settings = get_settings()
+    engine = engine_for_url(settings.database_url.get_secret_value())
+    run_worker(lambda: Session(engine), f"worker-{uuid4().hex[:12]}")

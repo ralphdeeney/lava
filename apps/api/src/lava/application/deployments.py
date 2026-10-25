@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from lava.application.tenancy import Tenancy
-from lava.db.base import Deployment, DeploymentEvent, Environment, Service
+from lava.db.base import Deployment, DeploymentEvent, DeploymentJob, Environment, Service
 from lava.domain.control_plane import ControlPlaneError
 
 STATUSES = {
@@ -24,7 +24,7 @@ STATUSES = {
 }
 TERMINAL = {"active", "failed", "cancelled", "rolled_back"}
 TRANSITIONS = {
-    "queued": {"building", "cancelled"},
+    "queued": {"building", "failed", "cancelled"},
     "building": {"built", "failed", "cancelled"},
     "built": {"deploying", "failed", "cancelled"},
     "deploying": {"verifying", "failed", "cancelled"},
@@ -99,6 +99,7 @@ class DeploymentService:
                 message="Deployment queued",
             )
         )
+        self.session.add(DeploymentJob(deployment_id=deployment.id))
         try:
             self.session.commit()
         except IntegrityError:
@@ -116,6 +117,7 @@ class DeploymentService:
         expected_version: int | None = None,
         message: str | None = None,
         failure_code: str | None = None,
+        commit: bool = True,
     ) -> Deployment:
         if target not in STATUSES:
             raise ControlPlaneError(422, "invalid_status", "Invalid deployment status")
@@ -171,5 +173,8 @@ class DeploymentService:
                 message="Deployment state changed",
             )
         )
-        self.session.commit()
+        if commit:
+            self.session.commit()
+        else:
+            self.session.flush()
         return deployment

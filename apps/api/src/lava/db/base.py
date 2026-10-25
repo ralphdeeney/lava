@@ -345,6 +345,47 @@ class DeploymentEvent(Base):
     )
 
 
+class DeploymentJob(Base):
+    __tablename__ = "deployment_jobs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    deployment_id: Mapped[str] = mapped_column(
+        ForeignKey("deployments.id", ondelete="RESTRICT"), nullable=False, unique=True
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="queued")
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="3")
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    lease_owner: Mapped[str | None] = mapped_column(String(100))
+    lease_token_hash: Mapped[str | None] = mapped_column(String(64))
+    lease_generation: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    leased_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancellation_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error_code: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued','running','retry_wait','succeeded','failed','cancelled')",
+            name="ck_deployment_job_status",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0 AND max_attempts BETWEEN 1 AND 10",
+            name="ck_deployment_job_attempts",
+        ),
+        CheckConstraint("lease_generation >= 0", name="ck_deployment_job_generation"),
+        Index("ix_deployment_jobs_schedule", "status", "available_at", "priority"),
+    )
+
+
 class PasswordAccount(Base):
     __tablename__ = "password_accounts"
     user_id: Mapped[str] = mapped_column(

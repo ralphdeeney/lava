@@ -10,7 +10,14 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 
 from lava.core.settings import Settings
+from lava.db.base import DeploymentJob
 from lava.main import check_database
+
+
+def test_deployment_job_indexes_match_migration_contract():
+    indexes = {index.name for index in DeploymentJob.__table__.indexes}
+    assert indexes == {"ix_deployment_jobs_schedule"}
+    assert "ix_deployment_jobs_available_at" not in indexes
 
 
 @pytest.mark.integration
@@ -186,7 +193,7 @@ def test_edited_legacy_metadata_blocks_lossy_downgrade(field, value):
         with engine.connect() as connection:
             assert (
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "0006"
+                == "0007"
             )
     finally:
         # Delete only this test's legacy row, even when the current buggy guard downgraded it.
@@ -256,7 +263,7 @@ def test_browser_migration_preserves_existing_owned_metadata():
             )
             assert (
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "0006"
+                == "0007"
             )
     finally:
         with engine.begin() as connection:
@@ -367,7 +374,7 @@ def test_tenancy_migration_preserves_browser_era_data_and_blocks_lossy_rollback(
         with engine.connect() as connection:
             assert (
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "0006"
+                == "0007"
             )
     finally:
         with engine.begin() as connection:
@@ -417,7 +424,7 @@ def test_browser_migration_refuses_lossy_downgrade():
         with engine.connect() as connection:
             assert (
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "0006"
+                == "0007"
             )
             assert (
                 connection.execute(
