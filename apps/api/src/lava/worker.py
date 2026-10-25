@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 import signal
+import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -72,7 +73,7 @@ class DeploymentWorker:
         if job is None:
             self.session.rollback()
             return None
-        token = secrets.token_urlsafe(32)
+        token = f"{job.lease_generation + 1}.{secrets.token_urlsafe(32)}"
         job.status = "running"
         job.attempt_count += 1
         job.lease_owner = self.worker_id
@@ -93,6 +94,7 @@ class DeploymentWorker:
                 DeploymentJob.status == "running",
                 DeploymentJob.lease_owner == self.worker_id,
                 DeploymentJob.lease_token_hash == _hash(token),
+                DeploymentJob.lease_generation == int(token.split(".", 1)[0]),
                 DeploymentJob.leased_until > now,
             )
             .values(updated_at=now, **values)
@@ -111,41 +113,77 @@ class DeploymentWorker:
         )
 
     def cancel(self, job_id: str) -> None:
-        self.session.execute(
-            update(DeploymentJob)
-            .where(
-                DeploymentJob.id == job_id,
-                DeploymentJob.status.in_(["queued", "retry_wait", "running"]),
+        try:
+            job = self.session.scalar(
+                select(DeploymentJob).where(DeploymentJob.id == job_id).with_for_update()
             )
-            .values(cancellation_requested_at=datetime.now(UTC))
-        )
-        self.session.commit()
+            if job is None or job.status in {"succeeded", "failed", "cancelled"}:
+                self.session.rollback()
+                return
+            job.cancellation_requested_at = datetime.now(UTC)
+            if job.status != "running":
+                deployment = self.session.get(Deployment, job.deployment_id)
+                DeploymentService(self.session).transition(
+                    deployment.id,
+                    "cancelled",
+                    expected_version=deployment.transition_version,
+                    commit=False,
+                )
+                job.status = "cancelled"
+                job.completed_at = datetime.now(UTC)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
 
     def complete(self, job_id: str, token: str, success: bool) -> None:
-        deployment_id = self.session.scalar(
-            select(DeploymentJob.deployment_id).where(DeploymentJob.id == job_id)
-        )
-        if deployment_id is None:
-            raise LeaseLost("job not found")
-        self._guarded(
-            job_id,
-            token,
-            {"status": "succeeded" if success else "failed", "completed_at": datetime.now(UTC)},
-        )
-        deployment = self.session.get(Deployment, deployment_id)
-        if deployment is None:
-            raise LeaseLost("deployment not found")
-        service = DeploymentService(self.session)
-        if success:
-            for target in ("building", "built", "deploying", "verifying", "active"):
+        try:
+            job = self.session.scalar(
+                select(DeploymentJob).where(DeploymentJob.id == job_id).with_for_update()
+            )
+            if job is not None:
+                self.session.refresh(job)
+            now = datetime.now(UTC)
+            if (
+                job is None
+                or job.status != "running"
+                or job.lease_owner != self.worker_id
+                or job.lease_token_hash != _hash(token)
+                or job.lease_generation != int(token.split(".", 1)[0])
+                or job.leased_until <= now
+            ):
+                raise LeaseLost("worker lease is no longer valid")
+            deployment = self.session.get(Deployment, job.deployment_id)
+            if deployment is None:
+                raise LeaseLost("deployment not found")
+            targets = (
+                ["cancelled"]
+                if job.cancellation_requested_at
+                else (
+                    ["building", "built", "deploying", "verifying", "active"]
+                    if success
+                    else ["failed"]
+                )
+            )
+            service = DeploymentService(self.session)
+            for target in targets:
                 service.transition(
-                    deployment.id, target, expected_version=deployment.transition_version
+                    deployment.id,
+                    target,
+                    expected_version=deployment.transition_version,
+                    commit=False,
                 )
                 self.session.refresh(deployment)
-        else:
-            service.transition(
-                deployment.id, "failed", expected_version=deployment.transition_version
+            job.status = (
+                "cancelled"
+                if job.cancellation_requested_at
+                else ("succeeded" if success else "failed")
             )
+            job.completed_at = now
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
 
     def process_once(self, executor: SimulatedExecutor | None = None) -> bool:
         claimed = self.claim()
@@ -153,10 +191,32 @@ class DeploymentWorker:
             return False
         job, token = claimed
         executor = executor or SimulatedExecutor()
+        stop_heartbeat = threading.Event()
+        lease_lost = threading.Event()
+        engine = self.session.get_bind()
+
+        def renew_lease() -> None:
+            interval = max(0.1, self.lease_seconds / 3)
+            while not stop_heartbeat.wait(interval):
+                try:
+                    with Session(engine) as heartbeat_session:
+                        DeploymentWorker(
+                            heartbeat_session, self.worker_id, self.lease_seconds
+                        ).heartbeat(job.id, token)
+                except Exception as error:
+                    log.warning(
+                        "worker_heartbeat_failed", job_id=job.id, error_type=type(error).__name__
+                    )
+                    lease_lost.set()
+                    return
+
+        heartbeat_thread = threading.Thread(target=renew_lease, daemon=True)
+        heartbeat_thread.start()
         try:
             outcome = executor.run(
                 lambda: (
-                    self.session.scalar(
+                    lease_lost.is_set()
+                    or self.session.scalar(
                         select(DeploymentJob.cancellation_requested_at).where(
                             DeploymentJob.id == job.id
                         )
@@ -164,10 +224,11 @@ class DeploymentWorker:
                     is not None
                 )
             )
+            if lease_lost.is_set():
+                raise LeaseLost("heartbeat failed or lease was reclaimed")
             if outcome == "cancelled":
-                self._guarded(
-                    job.id, token, {"status": "cancelled", "completed_at": datetime.now(UTC)}
-                )
+                self.cancel(job.id)
+                self.complete(job.id, token, False)
             elif outcome == "retryable_failure" and job.attempt_count < min(
                 job.max_attempts, self.max_attempts
             ):
@@ -185,6 +246,9 @@ class DeploymentWorker:
                 self.complete(job.id, token, outcome == "success")
         except LeaseLost:
             log.warning("worker_lease_lost", job_id=job.id, worker_id=self.worker_id)
+        finally:
+            stop_heartbeat.set()
+            heartbeat_thread.join(timeout=max(1, self.lease_seconds / 3 + 1))
         return True
 
 
