@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -205,6 +206,33 @@ class DeploymentCreate(Input):
     configuration_revision: int = Field(ge=1, strict=True)
     idempotency_key: str = Field(min_length=1, max_length=128)
 
+    @model_validator(mode="after")
+    def source_identity_valid(self):
+        if any(ord(char) < 32 or ord(char) == 127 for char in self.repository_url):
+            raise ValueError("Invalid repository URL")
+        if self.source_type == "git":
+            parsed = urlsplit(self.repository_url)
+            if (
+                parsed.scheme != "https"
+                or not parsed.hostname
+                or parsed.username
+                or parsed.password
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError("Git deployments require a credential-free HTTPS repository URL")
+        if self.source_type == "image" and not self.image_digest:
+            raise ValueError("Image deployments require a digest")
+        if self.image_digest and not re.fullmatch(r"sha256:[0-9a-f]{64}", self.image_digest):
+            raise ValueError("Invalid image digest")
+        if (
+            not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}", self.source_branch)
+            or ".." in self.source_branch
+            or "//" in self.source_branch
+        ):
+            raise ValueError("Invalid source branch")
+        return self
+
 
 class DeploymentView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -230,6 +258,7 @@ class DeploymentView(BaseModel):
         "cancelled",
         "rolled_back",
     ]
+    transition_version: int
     failure_code: str | None
     failure_message: str | None
     created_by: UUID
@@ -243,6 +272,7 @@ class DeploymentEventView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     deployment_id: UUID
+    sequence: int
     from_status: str | None
     to_status: str
     message: str | None

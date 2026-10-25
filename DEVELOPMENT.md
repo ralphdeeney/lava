@@ -297,7 +297,7 @@ Do not upload the entire test-results directory. CI publishes only explicit sani
 ## Slice 01.3: collaboration and environments
 
 Start with `./scripts/bootstrap.sh` and the existing loopback-bound Compose stack. Apply
-`alembic upgrade head` before starting the updated API; readiness requires migration0005.
+`alembic upgrade head` before starting the updated API; readiness requires migration0006.
 The migration backfills each existing project's Owner membership and leaves previous services
 unassigned to an environment. Do not reset a persistent database or delete existing rows to
 upgrade. `alembic downgrade` refuses if new membership, invitation, environment or changed
@@ -316,7 +316,7 @@ validated build preference, start command, branch, resource limits and desired r
 settings do not execute deployments. Do not put secrets in the configuration fields; this slice
 provides no environment-variable secret store.
 
-The disposable `*_test` PostgreSQL suite verifies migration0005, membership/role integrity,
+The disposable `*_test` PostgreSQL suite verifies migration0006, membership/role integrity,
 invitation lifecycle, tenant isolation and service/environment foreign keys. The browser
 verifier exercises the real API/web processes and publishes only sanitized outcome metadata.
 Candidate code runs on GitHub-hosted CI without InstaBox secrets; the serialized trusted-main

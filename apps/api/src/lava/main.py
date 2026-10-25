@@ -27,7 +27,7 @@ def check_database(settings: Annotated[Settings, Depends(get_settings)]) -> bool
             connection.execute(text("SELECT 1"))
             # Readiness requires the current schema, not just an accepting TCP socket.
             revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-            return revision == "0005"
+            return revision == "0006"
     except SQLAlchemyError:
         structlog.get_logger().warning("database_unavailable")
         return False

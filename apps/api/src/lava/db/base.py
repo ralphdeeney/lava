@@ -280,6 +280,7 @@ class Deployment(Base):
     configuration_revision: Mapped[int] = mapped_column(Integer, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="queued")
+    transition_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     failure_code: Mapped[str | None] = mapped_column(String(80))
     failure_message: Mapped[str | None] = mapped_column(String(500))
     created_by: Mapped[str] = mapped_column(
@@ -319,6 +320,7 @@ class Deployment(Base):
             "source_commit_sha ~ '^[0-9a-fA-F]{7,64}$'", name="ck_deployment_commit_sha"
         ),
         CheckConstraint("configuration_revision >= 1", name="ck_deployment_config_revision"),
+        CheckConstraint("transition_version >= 0", name="ck_deployment_transition_version"),
         Index("ix_deployments_status_created", "status", "created_at"),
         Index("ix_deployments_service_created", "service_id", "created_at"),
     )
@@ -330,6 +332,7 @@ class DeploymentEvent(Base):
     deployment_id: Mapped[str] = mapped_column(
         ForeignKey("deployments.id", ondelete="CASCADE"), nullable=False
     )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     from_status: Mapped[str | None] = mapped_column(String(20))
     to_status: Mapped[str] = mapped_column(String(20), nullable=False)
     message: Mapped[str | None] = mapped_column(String(500))
@@ -337,6 +340,7 @@ class DeploymentEvent(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     __table_args__ = (
+        UniqueConstraint("deployment_id", "sequence", name="uq_deployment_event_sequence"),
         Index("ix_deployment_events_deployment_created", "deployment_id", "created_at", "id"),
     )
 
