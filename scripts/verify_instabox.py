@@ -178,6 +178,7 @@ def main() -> int:
         with (run_dir / "commands.log").open("a") as log:
             log.write(redact(result.stdout[-32768:], credentials) + "\n")
         if check and result.returncode:
+            print(redact(result.stdout[-4096:], credentials), file=sys.stderr)
             raise RuntimeError(
                 f"Command failed ({result.returncode}): {argv[0]} {argv[1] if len(argv) > 1 else ''}"
             )
