@@ -4,6 +4,8 @@
   let { data } = $props();
   let name = $state(''); let description = $state(''); let pending = $state(false); let message = $state(''); let saved = $state(false);
   $effect(() => { name = data.project.name; description = data.project.description; });
+  const canConfigure = $derived(['owner', 'admin', 'developer'].includes(data.project.my_role));
+  const canAdminister = $derived(data.project.my_role === 'owner');
   async function save(event: SubmitEvent) {
     event.preventDefault(); pending = true; message = ''; saved = false;
     try { await mutate(`/projects/${data.project.id}`, 'PATCH', data.session.csrf_token, { name, description }); await invalidateAll(); saved = true; }
@@ -21,14 +23,15 @@
 <svelte:head><title>{data.project.name} · LAVA</title></svelte:head>
 <a class="back-link" href="/projects">← Projects</a>
 <div class="page-heading"><div><p class="eyebrow">PROJECT</p><h1>{data.project.name}</h1><p class="muted">{data.project.description || 'No description'}</p></div><span class="badge">{data.project.lifecycle_status}</span></div>
+<div class="actions"><a class="button secondary" href={`/projects/${data.project.id}/members`}>Members</a><a class="button secondary" href={`/projects/${data.project.id}/environments`}>Environments</a></div>
 {#if message}<p role="alert" class="notice">{message}</p>{/if}
 {#if saved}<p role="status" class="success">Project saved.</p>{/if}
 <section aria-labelledby="services-title">
-  <div class="section-heading"><h2 id="services-title">Services</h2>{#if data.project.lifecycle_status === 'active'}<a class="button" href={`/projects/${data.project.id}/services/new`}>Create service</a>{/if}</div>
+  <div class="section-heading"><h2 id="services-title">Services</h2>{#if data.project.lifecycle_status === 'active' && canConfigure}<a class="button" href={`/projects/${data.project.id}/services/new`}>Create service</a>{/if}</div>
   {#if data.services.length === 0}<div class="empty-state"><p>No services yet. Register a service to keep its configuration here.</p></div>
   {:else}<ul class="resource-grid">{#each data.services as service}<li><a class="resource-card" href={`/projects/${data.project.id}/services/${service.id}`}><span class="badge">{service.desired_state}</span><h3>{service.name}</h3><p>{service.service_type} · {service.resources.cpu} CPU · {service.resources.memory_mb} MiB</p><span class="fine-print">View configuration →</span></a></li>{/each}</ul>{/if}
 </section>
-<section class="panel form-panel" aria-labelledby="project-settings-title">
+{#if canAdminister}<section class="panel form-panel" aria-labelledby="project-settings-title">
   <h2 id="project-settings-title">Project settings</h2>
   <form onsubmit={save}>
     <fieldset disabled={pending || data.project.lifecycle_status === 'archived'}>
@@ -38,3 +41,4 @@
     </fieldset>
   </form>
 </section>
+{/if}

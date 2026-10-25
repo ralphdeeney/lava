@@ -50,4 +50,9 @@ Do not run unreviewed candidate code on a credential-bearing or Docker-root pers
 The existing Phase 00 VM workflow is evidence for its trusted sources, not a security gate
 for arbitrary Phase 01 PRs. Slice01.1 passed9 applicable evaluations;11 broader scenarios remained outstanding at its
 checkpoint. Later scores require independently executed exact-source evidence. See engineering/README.md and evals/README.md.
+Slice01.2 merged through PR4 at 658a0071852d62e25bd1ac51bae4a2e2ff06e872 after an
+explicitly authorized exceptional logout-cookie repair. Its final gate passed16 real browser
+journeys,13 applicable evaluations and trusted-main InstaBox verification. Slice01.3 is the
+current authorized membership/environment metadata scope; do not run unreviewed candidates
+with InstaBox credentials or start deployment execution.
 No Kubernetes, billing, autoscaling or AI agents in these phases.

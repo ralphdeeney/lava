@@ -40,7 +40,15 @@ def require_disposable_database():
 def control_plane():
     require_disposable_database()
     from lava.auth.credentials import issue_credential
-    from lava.db.base import ApiCredential, Project, Service, User
+    from lava.db.base import (
+        ApiCredential,
+        Environment,
+        Project,
+        ProjectInvitation,
+        ProjectMembership,
+        Service,
+        User,
+    )
     from lava.main import app
 
     subprocess.run(["alembic", "upgrade", "head"], cwd=API_ROOT, check=True)
@@ -70,6 +78,13 @@ def control_plane():
         with engine.begin() as connection:
             projects = select(Project.id).where(Project.owner_id.in_(identities))
             connection.execute(delete(Service).where(Service.project_id.in_(projects)))
+            connection.execute(
+                delete(ProjectInvitation).where(ProjectInvitation.project_id.in_(projects))
+            )
+            connection.execute(
+                delete(ProjectMembership).where(ProjectMembership.project_id.in_(projects))
+            )
+            connection.execute(delete(Environment).where(Environment.project_id.in_(projects)))
             connection.execute(delete(Project).where(Project.owner_id.in_(identities)))
             connection.execute(delete(ApiCredential).where(ApiCredential.user_id.in_(identities)))
             connection.execute(delete(User).where(User.id.in_(identities)))

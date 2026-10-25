@@ -1,0 +1,23 @@
+{
+  "project": "LAVA",
+  "phase": "01",
+  "slice": "01.3",
+  "branch": "feat/phase01-slice03-tenancy-environments",
+  "base_commit": "658a0071852d62e25bd1ac51bae4a2e2ff06e872",
+  "status": "IMPLEMENTING",
+  "repair_attempts": 0,
+  "initial_full_verification": "not_run",
+  "retest": "not_run",
+  "pull_request": null,
+  "merge_commit": null,
+  "security_review": "not_run",
+  "instabox": "not_run",
+  "evals": {
+    "executed": 0,
+    "passed": 0,
+    "failed": 0,
+    "blocked": 0,
+    "not_run": "pending current-source reconciliation"
+  },
+  "background_coding_active": false
+}

@@ -59,6 +59,20 @@ third repair if the exceptional retest fails. The repair validates an expired de
 clears the cookie with matching attributes, and adds real-browser cookie-removal assertions.
 The exceptional retest result will be recorded after execution.
 
+## Final exceptional gate and merge
+
+The user-authorized repair commit `b039baa633fc90701a71293c2742e3fee7c644e6` passed the
+complete GitHub Actions retest. The exact-source push run `40189460114` recorded 100/100
+PostgreSQL integration tests, 16/16 real desktop/mobile browser journeys, and 13/13 applicable
+Slice 01.2 evaluations; unit, Svelte, build and disposable Compose also passed. Both required
+`checks` and `engineering-controls` jobs passed on push and PR. An independent scoped security
+review found no blocking issue. The attempted Codex-local frontend/browser/Compose run was
+environment-blocked; it is not counted as a pass. Native protected squash merge of PR #4
+completed at `658a0071852d62e25bd1ac51bae4a2e2ff06e872`. Trusted main-branch InstaBox run
+`40189820206` succeeded on that exact merge SHA with exit code 0, PostgreSQL and Compose
+checks, and owned cleanup. Seven broader Phase 01 catalog cases remained beyond 01.2. Full
+sanitized evidence is on PR #4, comment `6397202702`.
+
 Evidence SHA256:
 - PostgreSQL JUnit:3d7e6ad4bd898fd44107865e053827a84eec4f730ffaa6799445091dc35b4e4e
 - Browser JSON:0ea9af1d151e799e6f5743d47b3236ca28c0cd9356731eba3301572683474d03

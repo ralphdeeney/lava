@@ -49,3 +49,17 @@ SvelteKit uses a narrow same-origin BFF and server-side protected layouts; brows
 receive API bearer tokens. Cookie sessions and API tokens resolve to the same existing user
 ownership checks. Origin+session-boundCSRF protects browser mutations; invalid bearer headers
 cannot fall back to cookies. See ADR0002 for provisioning, expiry/revocation and trust limits.
+
+## Slice 01.3 collaboration boundary
+
+Project authority is centralized in the application layer and documented in ADR0003. The
+immutable project owner remains canonical; active membership rows enable Admin, Developer and
+Viewer access. Every request checks current membership, and writes serialize on the project
+row before changing authority or configuration. The browser BFF exposes only explicit new
+project and invitation routes; it does not decide authorization.
+
+Migration0004 adds project memberships, identity-bound invitations, project environments and
+typed service configuration metadata. Existing services can remain unassigned to an
+environment. Database constraints prevent an environment from another project being attached
+to a service. These records describe desired control-plane state only. No container lifecycle,
+build or route side effects occur in the API process.

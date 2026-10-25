@@ -4,14 +4,17 @@
   "slice": "01.2",
   "branch": "feat/phase01-slice02-browser-auth",
   "base_commit": "2c78551bd9ecfd144a114c20c3716d07440a083f",
-  "status": "BLOCKED",
+  "status": "MERGED",
   "repair_attempts": 1,
   "exceptional_repair": {
     "authorization": "User explicitly authorized one additional bounded logout-cookie repair and one full retest after the blocked checkpoint.",
     "attempts_used": 1,
     "scope": "Recognize only validated expired deletion cookies from FastAPI, delete with matching attributes, and assert cookie removal in real browser logout journeys.",
-    "retest": "pending",
-    "failure_policy": "If this retest fails, stop without further repair."
+    "retest": "passed exact-source GitHub Actions run40189460114; 16/16 browser and 13/13 applicable evaluations",
+    "failure_policy": "If this retest fails, stop without further repair.",
+    "pr": "https://github.com/ralphdeeney/lava/pull/4",
+    "merge_commit": "658a0071852d62e25bd1ac51bae4a2e2ff06e872",
+    "evidence_comment": "https://github.com/ralphdeeney/lava/pull/4#issuecomment-6397202702"
   },
   "previous_slice": {
     "pr": 3,
@@ -104,26 +107,58 @@
         "note": "Failed global browser report rejected; actual execution16/12/4 is recorded separately, not zero tests."
       },
       "junit_sha256": "3d7e6ad4bd898fd44107865e053827a84eec4f730ffaa6799445091dc35b4e4e"
+    },
+    {
+      "stage": "exceptional_retest",
+      "source_commit": "b039baa633fc90701a71293c2742e3fee7c644e6",
+      "environment": "GitHub Actions exact-source push",
+      "backend_unit": {
+        "passed": 37,
+        "failed": 0
+      },
+      "postgresql_integration": {
+        "passed": 100,
+        "failed": 0
+      },
+      "engineering": {
+        "passed": 133,
+        "failed": 0
+      },
+      "browser": {
+        "total": 16,
+        "passed": 16,
+        "failed": 0,
+        "skipped": 0
+      },
+      "evaluations": {
+        "applicable": 13,
+        "passed": 13,
+        "failed": 0,
+        "blocked": 0
+      },
+      "ruff": "passed",
+      "svelte": "passed",
+      "production_build": "passed",
+      "compose": "passed",
+      "ci_checks": [
+        "checks",
+        "engineering-controls"
+      ]
     }
   ],
-  "browser": "not_run before source freeze",
-  "instabox": "not_run: blocked candidate cannot be merged/dispatched with infrastructure credentials",
+  "browser": "passed 16/16 real desktop/mobile on exact-source GitHub Actions",
+  "instabox": "passed trusted-main run40189820206 at merge658a0071852d62e25bd1ac51bae4a2e2ff06e872",
   "background_coding_active": false,
-  "next_slice": "01.3 not started; requires01.2 verified and merged",
+  "next_slice": "01.3 authorized and in progress",
   "repair": "One aggregate: normalize UTC expiry, require Secure for every HTTPS origin, sanitize pytest output/JUnit while preserving status and metadata, assert real POST login form instead of removed placeholder, regression tests and style.",
-  "next_action": "Run the separately authorized exceptional full retest once; stop on failure and record exact results.",
-  "tested_source_commit": "3e50c363dda42b94d34a59450009c55e5ecb185a",
-  "release_ready": false,
-  "merge_eligible": false,
+  "next_action": "Historical release gate complete; see PR4 evidence comment6397202702",
+  "tested_source_commit": "b039baa633fc90701a71293c2742e3fee7c644e6",
+  "release_ready": true,
+  "merge_eligible": true,
   "security_review": {
-    "status": "BLOCKED",
+    "status": "PASSED",
     "critical_findings": 0,
-    "merge_blocking_findings": 1,
-    "remaining_finding": "Quoted empty deletion cookie rejected by frontend; logout action returns503 instead of redirect after backend revocation."
-  },
-  "remaining_blocker": {
-    "path": "apps/web/src/lib/server/api.ts",
-    "cause": "Starlette delete_cookie produces lava_session=\"\"; Max-Age=0; strict token validator rejects quoted empty value before Svelte cookie can be cleared.",
-    "future_remediation": "Separately authorized repair should recognize validated empty deletion cookies without relaxing live token validation and add direct parser regressions. No implementation under current exhausted budget."
+    "merge_blocking_findings": 0,
+    "evidence": "Independent scoped source review plus real browser acceptance on PR4"
   }
 }

@@ -4,6 +4,10 @@ import { acceptSessionCookie, backend, privateHeaders, requireSameOrigin } from 
 const uuid = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
 const collection = new RegExp(`^projects(?:/${uuid}/services)?$`);
 const item = new RegExp(`^projects/${uuid}(?:/services/${uuid})?$`);
+const projectCollection = new RegExp(`^projects/${uuid}/(?:members|invitations|environments)$`);
+const projectItem = new RegExp(`^projects/${uuid}/(?:members|invitations|environments)/${uuid}$`);
+const invitationCollection = /^invitations$/;
+const invitationDecision = new RegExp(`^invitations/${uuid}/(?:accept|decline)$`);
 
 function problem(status: number): Response {
   return new Response(JSON.stringify({ error: { code: 'request_failed', message: 'Request could not be completed' } }), {
@@ -15,11 +19,17 @@ const handler: RequestHandler = async (event) => {
   const path = event.params.path ?? '';
   const method = event.request.method;
   const authMethods: Record<string, string> = { 'auth/login': 'POST', 'auth/session': 'GET', 'auth/logout': 'POST', 'auth/logout-all': 'POST' };
-  const allowed = authMethods[path] === method || (collection.test(path) && ['GET', 'POST'].includes(method)) || (item.test(path) && ['GET', 'PATCH', 'DELETE'].includes(method));
+  const allowed = authMethods[path] === method ||
+    (collection.test(path) && ['GET', 'POST'].includes(method)) ||
+    (item.test(path) && ['GET', 'PATCH', 'DELETE'].includes(method)) ||
+    (projectCollection.test(path) && ['GET', 'POST'].includes(method)) ||
+    (projectItem.test(path) && ['GET', 'PATCH', 'DELETE'].includes(method)) ||
+    (invitationCollection.test(path) && method === 'GET') ||
+    (invitationDecision.test(path) && method === 'POST');
   if (!allowed) return problem(404);
   if (method !== 'GET' && !requireSameOrigin(event)) return problem(403);
   for (const [name, value] of event.url.searchParams) {
-    if (method !== 'GET' || !collection.test(path) || !['limit', 'offset'].includes(name) || !/^\d{1,8}$/.test(value)) return problem(400);
+    if (method !== 'GET' || !(collection.test(path) || projectCollection.test(path) || invitationCollection.test(path)) || !['limit', 'offset'].includes(name) || !/^\d{1,8}$/.test(value)) return problem(400);
   }
   let body: Uint8Array | undefined;
   if (['POST', 'PATCH'].includes(method)) {
