@@ -36,7 +36,26 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: uv sync --project apps/api --locked
       - run: ./scripts/check.sh
-      - run: cd apps/api && uv run --locked pytest tests -m integration
+      - run: mkdir -p test-results
+      - name: Real PostgreSQL API and migration tests
+        run: cd apps/api && uv run --locked pytest tests -m integration --junitxml=../../test-results/postgresql.xml
+      - name: Reconcile scoped control-plane evaluations
+        run: >-
+          python3 evals/runners/control_plane.py
+          --junit test-results/postgresql.xml
+          --source-commit "$(git rev-parse HEAD)"
+          --environment real-postgresql
+          --output evals/reports/phase01-current.json
+      - name: Publish source-bound test and evaluation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: control-plane-evidence-${{ github.sha }}
+          path: |
+            test-results/postgresql.xml
+            evals/reports/phase01-current.json
+          if-no-files-found: warn
+          retention-days: 7
       - run: mkdir -p "$RUNNER_TEMP/lava-verification"
       - run: PATH="$PWD/apps/api/.venv/bin:$PATH" ./scripts/verify-instabox.sh --data-dir "$RUNNER_TEMP/lava-verification" --allow-root-storage
       - uses: actions/upload-artifact@v4

@@ -1,3 +1,9 @@
+Current status: owner applied required checks `engineering-controls` and `checks`, pinned to
+GitHub Actions, strict updates and no bypass actors. PR2 merged at
+aae350a6cf2ed10bea09f9ec4aa3075ae038d0a8. Slice01.1 is tracked in
+state/slice01.1.json. Earlier configuration attempts below are retained as historical evidence;
+they are not the current repository policy. No persistent coding runner is provisioned.
+
 # Autonomous development control interfaces
 
 `control.py` implements durable one-repair accounting and fail-closed evidence assessment.
