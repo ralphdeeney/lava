@@ -15,6 +15,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from lava.application.deployments import DeploymentService
+from lava.core.settings import Settings, get_settings
 from lava.db.base import Deployment, DeploymentJob
 
 log = structlog.get_logger()
@@ -45,12 +46,20 @@ class SimulatedExecutor:
 
 class DeploymentWorker:
     def __init__(
-        self, session: Session, worker_id: str, lease_seconds: int = 60, max_attempts: int = 3
+        self,
+        session: Session,
+        worker_id: str,
+        lease_seconds: int = 60,
+        max_attempts: int = 3,
+        heartbeat_interval: float | None = None,
+        retry_backoff: float = 1.0,
     ):
         self.session = session
         self.worker_id = worker_id
         self.lease_seconds = lease_seconds
         self.max_attempts = max_attempts
+        self.heartbeat_interval = heartbeat_interval or lease_seconds / 3
+        self.retry_backoff = retry_backoff
 
     def claim(self) -> tuple[DeploymentJob, str] | None:
         now = datetime.now(UTC)
@@ -196,7 +205,7 @@ class DeploymentWorker:
         engine = self.session.get_bind()
 
         def renew_lease() -> None:
-            interval = max(0.1, self.lease_seconds / 3)
+            interval = self.heartbeat_interval
             while not stop_heartbeat.wait(interval):
                 try:
                     with Session(engine) as heartbeat_session:
@@ -232,7 +241,7 @@ class DeploymentWorker:
             elif outcome == "retryable_failure" and job.attempt_count < min(
                 job.max_attempts, self.max_attempts
             ):
-                delay = min(300, 2 ** max(0, job.attempt_count - 1))
+                delay = min(300, self.retry_backoff * 2 ** max(0, job.attempt_count - 1))
                 self._guarded(
                     job.id,
                     token,
@@ -252,19 +261,35 @@ class DeploymentWorker:
         return True
 
 
-def run_worker(session_factory: Callable[[], Session], worker_id: str) -> None:
-    stop = False
+def run_worker(
+    session_factory: Callable[[], Session], worker_id: str, settings: Settings | None = None
+) -> None:
+    settings = settings or get_settings()
+    stop = threading.Event()
 
     def request_stop(*_args) -> None:
-        nonlocal stop
-        stop = True
+        stop.set()
 
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
-    while not stop:
-        with session_factory() as session:
-            if not DeploymentWorker(session, worker_id).process_once():
-                time.sleep(1)
+    while not stop.is_set():
+        try:
+            with session_factory() as session:
+                processed = DeploymentWorker(
+                    session,
+                    worker_id,
+                    settings.worker_lease_seconds,
+                    settings.worker_max_attempts,
+                    settings.worker_heartbeat_interval_seconds,
+                    settings.worker_retry_backoff_seconds,
+                ).process_once()
+            if not processed:
+                stop.wait(settings.worker_poll_interval_seconds)
+        except Exception as error:
+            log.warning(
+                "worker_database_unavailable", worker_id=worker_id, error_type=type(error).__name__
+            )
+            stop.wait(settings.worker_poll_interval_seconds)
 
 
 if __name__ == "__main__":
@@ -275,4 +300,4 @@ if __name__ == "__main__":
 
     settings = get_settings()
     engine = engine_for_url(settings.database_url.get_secret_value())
-    run_worker(lambda: Session(engine), f"worker-{uuid4().hex[:12]}")
+    run_worker(lambda: Session(engine), f"worker-{uuid4().hex[:12]}", settings)

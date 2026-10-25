@@ -155,6 +155,7 @@ def main() -> int:
             "POSTGRES_USER",
             "POSTGRES_DB",
             "POSTGRES_PASSWORD",
+            "POSTGRES_WORKER_PASSWORD",
             "LAVA_DATABASE_URL",
         ):
             env.pop(name)
@@ -236,11 +237,14 @@ def main() -> int:
 
     project = args.project or "lava-verify-" + secrets.token_hex(6)
     password = secrets.token_hex(24)
+    worker_password = secrets.token_hex(24)
     credentials.append(password)
+    credentials.append(worker_password)
     envfile = run_dir / "compose.env"
     envfile.write_text(
         f"POSTGRES_USER=lava\nPOSTGRES_DB=lava_verification_test\n"
-        f"POSTGRES_PASSWORD={password}\nLAVA_ENVIRONMENT=test\n"
+        f"POSTGRES_PASSWORD={password}\nPOSTGRES_WORKER_PASSWORD={worker_password}\n"
+        "LAVA_ENVIRONMENT=test\n"
     )
     override = run_dir / "ports.yaml"
     override.write_text(

@@ -5,6 +5,9 @@ services:
   migrate:
     build:
       secrets: [proxy_ca]
+  worker:
+    build:
+      secrets: [proxy_ca]
   web:
     build:
       secrets: [proxy_ca]

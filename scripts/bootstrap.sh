@@ -19,8 +19,19 @@ if [[ ! -f .env ]]; then
 from pathlib import Path
 import secrets
 import os
+template = Path('.env.example').read_text()
+for name in ('POSTGRES_PASSWORD', 'POSTGRES_WORKER_PASSWORD'):
+    template = template.replace(name + '=\n', name + '=' + secrets.token_hex(24) + '\n')
 with os.fdopen(os.open('.env', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as envfile:
-    envfile.write(Path('.env.example').read_text().replace('POSTGRES_PASSWORD=\n', 'POSTGRES_PASSWORD=' + secrets.token_hex(24) + '\n'))
+    envfile.write(template)
+PY
+fi
+if ! grep -q '^POSTGRES_WORKER_PASSWORD=' .env; then
+  python3 - <<'PY'
+from pathlib import Path
+import secrets
+with Path('.env').open('a') as envfile:
+    envfile.write('POSTGRES_WORKER_PASSWORD=' + secrets.token_hex(24) + '\n')
 PY
 fi
 ./scripts/check.sh
