@@ -186,7 +186,7 @@ def test_edited_legacy_metadata_blocks_lossy_downgrade(field, value):
         with engine.connect() as connection:
             assert (
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "0005"
+                == "0006"
             )
     finally:
         # Delete only this test's legacy row, even when the current buggy guard downgraded it.
@@ -256,7 +256,7 @@ def test_browser_migration_preserves_existing_owned_metadata():
             )
             assert (
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "0005"
+                == "0006"
             )
     finally:
         with engine.begin() as connection:
@@ -367,7 +367,7 @@ def test_tenancy_migration_preserves_browser_era_data_and_blocks_lossy_rollback(
         with engine.connect() as connection:
             assert (
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "0005"
+                == "0006"
             )
     finally:
         with engine.begin() as connection:
@@ -417,7 +417,7 @@ def test_browser_migration_refuses_lossy_downgrade():
         with engine.connect() as connection:
             assert (
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "0005"
+                == "0006"
             )
             assert (
                 connection.execute(
