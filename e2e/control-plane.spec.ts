@@ -323,10 +323,18 @@ test('viewer can read but cannot mutate project resources', async ({ page, brows
     await expect(viewPage.getByRole('heading', { name: viewer.username })).toBeVisible();
     await expect(viewPage.getByRole('heading', { name: 'Invite member' })).toHaveCount(0);
     expect(await viewPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-    expect((await mutateAPI(viewPage, `/projects/${project.id}/environments`, 'POST', { name: 'No', slug: 'no' })).status()).toBe(403);
+    const environmentsBefore = await viewPage.request.get(`/api/projects/${project.id}/environments`);
+    const servicesBefore = await viewPage.request.get(`/api/projects/${project.id}/services`);
+    expect(environmentsBefore.status()).toBe(200);
+    expect(servicesBefore.status()).toBe(200);
+    expect((await mutateAPI(viewPage, `/projects/${project.id}/environments`, 'POST', { name: 'No', slug: 'no' })).status()).toBe(404);
     expect((await mutateAPI(viewPage, `/projects/${project.id}/services`, 'POST', {
       name: 'No', service_type: 'api', desired_state: 'stopped', resources: { cpu: 1, memory_mb: 512 },
-    })).status()).toBe(403);
+    })).status()).toBe(404);
+    const environmentsAfter = await viewPage.request.get(`/api/projects/${project.id}/environments`);
+    const servicesAfter = await viewPage.request.get(`/api/projects/${project.id}/services`);
+    expect(await environmentsAfter.json()).toEqual(await environmentsBefore.json());
+    expect(await servicesAfter.json()).toEqual(await servicesBefore.json());
     const strangerPage = await strangerContext.newPage();
     await login(strangerPage, stranger);
     expect((await strangerPage.request.get(`/api/projects/${project.id}`)).status()).toBe(404);

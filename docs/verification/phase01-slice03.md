@@ -22,3 +22,9 @@ repair updates only those fixture/transaction assertions, the exact browser sele
 cloud-only CA mount. It does not relax downgrade guards, browser permission assertions or TLS.
 See `engineering/state/slice01.3.json` for machine-readable status and the Actions evidence
 linked from PR #5. The full retest result will be published after it executes.
+
+The explicit one-time exceptional repair authorized after the initial retest updates only
+the two desktop/mobile viewer expectations from 403 to the established concealment response
+404, and adds before/after assertions proving denied mutations do not change environment or
+service records. Backend authorization remains unchanged. This exception permits one complete
+retest; no further repair is permitted if it fails.
