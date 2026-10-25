@@ -10,4 +10,4 @@ services:
       secrets: [proxy_ca]
 secrets:
   proxy_ca:
-    file: /etc/ssl/certs/ca-certificates.crt
+    file: ${CODEX_PROXY_CERT:?Set CODEX_PROXY_CERT for cloud builds}

@@ -319,7 +319,7 @@ test('viewer can read but cannot mutate project resources', async ({ page, brows
     await expect(viewPage.getByRole('heading', { name: project.name })).toBeVisible();
     await expect(viewPage.getByRole('link', { name: 'Create service' })).toHaveCount(0);
     await viewPage.goto(`/projects/${project.id}/members`);
-    await expect(viewPage.getByRole('heading', { name: 'Members' })).toBeVisible();
+    await expect(viewPage.getByRole('heading', { name: 'Members', exact: true })).toBeVisible();
     await expect(viewPage.getByRole('heading', { name: viewer.username })).toBeVisible();
     await expect(viewPage.getByRole('heading', { name: 'Invite member' })).toHaveCount(0);
     expect(await viewPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);

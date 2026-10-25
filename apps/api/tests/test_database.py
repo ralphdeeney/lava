@@ -131,6 +131,11 @@ def test_legacy_project_is_preserved_by_owner_migration():
         subprocess.run(["alembic", "upgrade", "head"], cwd=api_root, check=True)
     finally:
         with engine.begin() as connection:
+            if "project_memberships" in inspect(engine).get_table_names():
+                connection.execute(
+                    text("DELETE FROM project_memberships WHERE project_id = :id"),
+                    {"id": project_id},
+                )
             connection.execute(text("DELETE FROM projects WHERE id = :id"), {"id": project_id})
         engine.dispose()
 
@@ -181,11 +186,16 @@ def test_edited_legacy_metadata_blocks_lossy_downgrade(field, value):
         with engine.connect() as connection:
             assert (
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "0002"
+                == "0004"
             )
     finally:
         # Delete only this test's legacy row, even when the current buggy guard downgraded it.
         with engine.begin() as connection:
+            if "project_memberships" in inspect(engine).get_table_names():
+                connection.execute(
+                    text("DELETE FROM project_memberships WHERE project_id = :id"),
+                    {"id": project_id},
+                )
             connection.execute(text("DELETE FROM projects WHERE id = :id"), {"id": project_id})
         if "users" not in inspect(engine).get_table_names():
             subprocess.run(["alembic", "upgrade", "head"], cwd=api_root, check=True)
@@ -407,7 +417,7 @@ def test_browser_migration_refuses_lossy_downgrade():
         with engine.connect() as connection:
             assert (
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "0003"
+                == "0004"
             )
             assert (
                 connection.execute(
