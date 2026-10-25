@@ -113,3 +113,23 @@ def test_startup_failure_cleans_only_owned_project_and_redacts_logs(tmp_path, mo
         assert passwords[0] not in log.read_text()
         assert log.stat().st_size <= 65536
         assert log.stat().st_mode & 0o077 == 0
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"A foundation for shipping.",
+        b'<form method="GET"><input name="username"><input name="password" type="password"></form>',
+        b'<form method="POST"><input name="username"></form>',
+        b'<form method="POST"><input name="username"><input name="password" type="text"></form>',
+    ],
+)
+def test_login_gate_rejects_placeholder_or_unsafe_form(body):
+    with pytest.raises(RuntimeError, match="login form"):
+        verifier.assert_login_page(body)
+
+
+def test_login_gate_checks_real_password_form():
+    verifier.assert_login_page(
+        b'<form method="POST"><input name="username"><input name="password" type="password"></form>'
+    )

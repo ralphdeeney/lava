@@ -210,7 +210,19 @@ def main() -> int:
             raise RuntimeError("Unexpected test database binding")
         step(
             "complete_pytest_postgresql",
-            ["uv", "run", "--locked", "pytest", "tests"],
+            [
+                "uv",
+                "run",
+                "--locked",
+                "python",
+                str(checkout / "scripts/run_pytest.py"),
+                "--junit",
+                str(checkout / "test-results/instabox-postgresql.xml"),
+                "--cwd",
+                str(checkout / "apps/api"),
+                "--",
+                "tests",
+            ],
             cwd=checkout / "apps/api",
             extra={
                 "LAVA_DATABASE_URL": f"postgresql+psycopg://postgres:{password}@{address}/lava_test",

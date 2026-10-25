@@ -60,3 +60,15 @@ browser authentication/session boundary and tenant-role design, followed by envi
 deployment metadata, dashboard/user journeys and hardening as separately accepted scope.
 No customer-container execution or Phase02 work is authorized here. A failing postmerge
 InstaBox run blocks advancement and must be reported without automatic destructive rollback.
+
+## Current01.2 authorization
+
+Slice01.1 actually merged in PR3 at2c78551bd9ecfd144a114c20c3716d07440a083f; its actual trusted
+InstaBox run40167400907 passed for that merge SHA. Its checkpoint had9 applicable evalpasses
+and11 broader scenarios outstanding. The current authorized01.2 adds password provisioning,
+browser sessions, CSRF/login-abuse controls and a real responsive SvelteKit dashboard connected
+to existing project/service APIs. No public signup, environments, deployment engine, Railpack,
+customer containers, Kubernetes, billing or autoscaling is authorized. Preserve6specialists,
+strict enforcedchecks and oneaggregate repair/retest. Do not start01.3 before01.2 passes and
+actually merges. Recommended01.3 is tenant/membership roles and environment-scoped metadata,
+subject to the next explicit scope; no persistent coding runner is active.

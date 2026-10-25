@@ -2,7 +2,16 @@
 name = "lava-api"
 version = "0.0.1"
 requires-python = ">=3.13,<3.14"
-dependencies = ["fastapi==0.135.1", "uvicorn==0.41.0", "pydantic-settings==2.13.1", "sqlalchemy==2.0.48", "psycopg[binary]==3.3.3", "alembic==1.18.4", "structlog==25.5.0"]
+dependencies = [
+    "fastapi==0.135.1",
+    "uvicorn==0.41.0",
+    "pydantic-settings==2.13.1",
+    "sqlalchemy==2.0.48",
+    "psycopg[binary]==3.3.3",
+    "alembic==1.18.4",
+    "structlog==25.5.0",
+    "argon2-cffi==25.1.0",
+]
 
 [dependency-groups]
 dev = ["pytest==9.0.2", "httpx2==2.16.0", "ruff==0.15.6"]

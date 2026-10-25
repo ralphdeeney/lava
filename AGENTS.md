@@ -48,6 +48,6 @@ count, tests/evals, PR and actual merge state; never advance on auto-merge enabl
 No persistent coding runner is currently verified: do not claim autonomous background work.
 Do not run unreviewed candidate code on a credential-bearing or Docker-root persistent VM.
 The existing Phase 00 VM workflow is evidence for its trusted sources, not a security gate
-for arbitrary Phase 01 PRs. All 20 Phase 01 evaluations remain not_run until independently
-executed against implemented features. See engineering/README.md and evals/README.md.
+for arbitrary Phase 01 PRs. Slice01.1 passed9 applicable evaluations;11 broader scenarios remained outstanding at its
+checkpoint. Later scores require independently executed exact-source evidence. See engineering/README.md and evals/README.md.
 No Kubernetes, billing, autoscaling or AI agents in these phases.
