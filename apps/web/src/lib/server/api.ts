@@ -66,7 +66,15 @@ export function acceptSessionCookie(event: RequestEvent, response: Response): vo
     const maxAge = rawMaxAge === undefined ? undefined : Number(rawMaxAge);
     if (maxAge !== undefined && (!Number.isInteger(maxAge) || maxAge < 0 || maxAge > 31_536_000)) throw new Error('Invalid session response');
     const value = pair.slice(separator + 1);
-    if (value && !/^[A-Za-z0-9_-]{20,200}$/.test(value)) throw new Error('Invalid session response');
+    if (value === '' || value === '""') {
+      const expires = values.get('expires');
+      if (maxAge !== 0 || !expires || !Number.isFinite(Date.parse(expires)) || Date.parse(expires) > Date.now()) {
+        throw new Error('Invalid session response');
+      }
+      event.cookies.delete(sessionName, { path: '/', httpOnly: true, sameSite: 'lax', secure: values.has('secure') });
+      continue;
+    }
+    if (maxAge === 0 || !/^[A-Za-z0-9_-]{20,200}$/.test(value)) throw new Error('Invalid session response');
     event.cookies.set(sessionName, value, { path: '/', httpOnly: true, sameSite: 'lax', secure: values.has('secure'), maxAge });
   }
 }

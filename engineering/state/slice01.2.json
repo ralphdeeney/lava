@@ -6,6 +6,13 @@
   "base_commit": "2c78551bd9ecfd144a114c20c3716d07440a083f",
   "status": "BLOCKED",
   "repair_attempts": 1,
+  "exceptional_repair": {
+    "authorization": "User explicitly authorized one additional bounded logout-cookie repair and one full retest after the blocked checkpoint.",
+    "attempts_used": 1,
+    "scope": "Recognize only validated expired deletion cookies from FastAPI, delete with matching attributes, and assert cookie removal in real browser logout journeys.",
+    "retest": "pending",
+    "failure_policy": "If this retest fails, stop without further repair."
+  },
   "previous_slice": {
     "pr": 3,
     "merge_commit": "2c78551bd9ecfd144a114c20c3716d07440a083f",
@@ -104,7 +111,7 @@
   "background_coding_active": false,
   "next_slice": "01.3 not started; requires01.2 verified and merged",
   "repair": "One aggregate: normalize UTC expiry, require Secure for every HTTPS origin, sanitize pytest output/JUnit while preserving status and metadata, assert real POST login form instead of removed placeholder, regression tests and style.",
-  "next_action": "Publish draft PR and actual CI evidence. No auto-merge, additional code repair/retest, candidate VM dispatch or01.3.",
+  "next_action": "Run the separately authorized exceptional full retest once; stop on failure and record exact results.",
   "tested_source_commit": "3e50c363dda42b94d34a59450009c55e5ecb185a",
   "release_ready": false,
   "merge_eligible": false,

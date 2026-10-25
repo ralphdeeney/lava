@@ -52,6 +52,13 @@ recognize empty/quoted-empty deletion cookies with Max-Age=0, preserve all exist
 and strict live-token validation, add direct cookie-parser coverage and rerun logout journeys.
 No second repair was made, no assertion weakened and no failing branch merged.
 
+The user subsequently authorized one exceptional, bounded repair and one full retest for this
+specific logout-cookie failure. This exception is tracked separately in
+`engineering/state/slice01.2.json`; it does not reset the original one-repair count or permit a
+third repair if the exceptional retest fails. The repair validates an expired deletion header,
+clears the cookie with matching attributes, and adds real-browser cookie-removal assertions.
+The exceptional retest result will be recorded after execution.
+
 Evidence SHA256:
 - PostgreSQL JUnit:3d7e6ad4bd898fd44107865e053827a84eec4f730ffaa6799445091dc35b4e4e
 - Browser JSON:0ea9af1d151e799e6f5743d47b3236ca28c0cd9356731eba3301572683474d03

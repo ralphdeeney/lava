@@ -159,6 +159,7 @@ test('logout invalidates the current session', async ({ page, context }) => {
   await page.goto('/sessions');
   await page.getByRole('button', { name: 'Log out', exact: true }).click();
   await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
+  expect((await context.cookies()).some(cookie => cookie.name === 'lava_session')).toBe(false);
   await context.addCookies([oldCookie]);
   await page.goto('/projects');
   await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
@@ -175,6 +176,7 @@ test('logout all revokes other browser sessions', async ({ page, browser }) => {
     await page.goto('/sessions');
     await page.getByRole('button', { name: 'Log out all sessions', exact: true }).click();
     await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
+    expect((await page.context().cookies()).some(cookie => cookie.name === 'lava_session')).toBe(false);
     await otherPage.goto('/projects');
     await expect(otherPage).toHaveURL(/\/login(?:\?.*)?$/);
   } finally { await other.close(); }

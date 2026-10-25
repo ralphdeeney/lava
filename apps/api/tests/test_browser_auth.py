@@ -197,13 +197,19 @@ def test_browser_mutations_require_origin_and_csrf(browser_auth, mode):
     assert fixture.client.get("/auth/session").status_code == 200
 
 
-def test_browser_logout_invalidates_session(browser_auth):
+@pytest.mark.parametrize("endpoint", ["/auth/logout", "/auth/logout-all"])
+def test_browser_logout_invalidates_session(browser_auth, endpoint):
     fixture = browser_auth
     response = login(fixture)
     cookie = fixture.client.cookies.get("lava_session")
-    assert (
-        fixture.client.post("/auth/logout", headers=mutation_headers(response)).status_code == 200
-    )
+    logout = fixture.client.post(endpoint, headers=mutation_headers(response))
+    assert logout.status_code == 200
+    deletion = SimpleCookie()
+    deletion.load(logout.headers["set-cookie"])
+    morsel = deletion["lava_session"]
+    assert morsel.value == "" and morsel["max-age"] == "0"
+    assert morsel["path"] == "/" and morsel["httponly"] and morsel["samesite"] == "lax"
+    assert parsedate_to_datetime(morsel["expires"]) <= datetime.now(UTC)
     assert fixture.client.get("/projects").status_code == 401
     fixture.client.cookies.set("lava_session", cookie)
     assert fixture.client.get("/auth/session").status_code == 401
