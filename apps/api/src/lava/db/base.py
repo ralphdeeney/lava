@@ -107,6 +107,7 @@ class Service(Base):
     )
     __table_args__ = (
         UniqueConstraint("project_id", "name", name="uq_services_project_name"),
+        UniqueConstraint("project_id", "id", name="uq_services_project_id"),
         ForeignKeyConstraint(
             ["project_id", "environment_id"],
             ["environments.project_id", "environments.id"],
@@ -256,6 +257,87 @@ class Environment(Base):
             "lifecycle_status IN ('active','archived')", name="ck_environment_lifecycle"
         ),
         CheckConstraint("slug ~ '^[a-z][a-z0-9-]{0,99}$'", name="ck_environment_slug"),
+    )
+
+
+class Deployment(Base):
+    __tablename__ = "deployments"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    environment_id: Mapped[str] = mapped_column(
+        ForeignKey("environments.id", ondelete="RESTRICT"), nullable=False
+    )
+    service_id: Mapped[str] = mapped_column(
+        ForeignKey("services.id", ondelete="RESTRICT"), nullable=False
+    )
+    source_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    repository_url: Mapped[str] = mapped_column(String(2048), nullable=False, server_default="")
+    source_commit_sha: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_branch: Mapped[str] = mapped_column(String(200), nullable=False)
+    image_digest: Mapped[str | None] = mapped_column(String(255))
+    configuration_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="queued")
+    failure_code: Mapped[str | None] = mapped_column(String(80))
+    failure_message: Mapped[str | None] = mapped_column(String(500))
+    created_by: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "service_id", "idempotency_key", name="uq_deployment_idempotency"
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "environment_id"],
+            ["environments.project_id", "environments.id"],
+            name="fk_deployment_environment_same_project",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "service_id"],
+            ["services.project_id", "services.id"],
+            name="fk_deployment_service_same_project",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("source_type IN ('git','image')", name="ck_deployment_source_type"),
+        CheckConstraint(
+            "status IN ('queued','building','built','deploying','verifying','active',"
+            "'failed','cancelled','rolled_back')",
+            name="ck_deployment_status",
+        ),
+        CheckConstraint(
+            "source_commit_sha ~ '^[0-9a-fA-F]{7,64}$'", name="ck_deployment_commit_sha"
+        ),
+        CheckConstraint("configuration_revision >= 1", name="ck_deployment_config_revision"),
+        Index("ix_deployments_status_created", "status", "created_at"),
+        Index("ix_deployments_service_created", "service_id", "created_at"),
+    )
+
+
+class DeploymentEvent(Base):
+    __tablename__ = "deployment_events"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    deployment_id: Mapped[str] = mapped_column(
+        ForeignKey("deployments.id", ondelete="CASCADE"), nullable=False
+    )
+    from_status: Mapped[str | None] = mapped_column(String(20))
+    to_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    message: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    __table_args__ = (
+        Index("ix_deployment_events_deployment_created", "deployment_id", "created_at", "id"),
     )
 
 

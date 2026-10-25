@@ -195,6 +195,60 @@ class EnvironmentView(BaseModel):
     updated_at: datetime
 
 
+class DeploymentCreate(Input):
+    environment_id: UUID
+    source_type: Literal["git", "image"] = "git"
+    repository_url: str = Field(default="", max_length=2048)
+    source_commit_sha: str = Field(min_length=7, max_length=64, pattern=r"^[0-9a-fA-F]{7,64}$")
+    source_branch: str = Field(default="main", min_length=1, max_length=200)
+    image_digest: str | None = Field(default=None, max_length=255)
+    configuration_revision: int = Field(ge=1, strict=True)
+    idempotency_key: str = Field(min_length=1, max_length=128)
+
+
+class DeploymentView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    project_id: UUID
+    environment_id: UUID
+    service_id: UUID
+    source_type: Literal["git", "image"]
+    repository_url: str
+    source_commit_sha: str
+    source_branch: str
+    image_digest: str | None
+    configuration_revision: int
+    idempotency_key: str
+    status: Literal[
+        "queued",
+        "building",
+        "built",
+        "deploying",
+        "verifying",
+        "active",
+        "failed",
+        "cancelled",
+        "rolled_back",
+    ]
+    failure_code: str | None
+    failure_message: str | None
+    created_by: UUID
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+
+
+class DeploymentEventView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    deployment_id: UUID
+    from_status: str | None
+    to_status: str
+    message: str | None
+    created_at: datetime
+
+
 class ErrorDetail(BaseModel):
     code: str
     message: str

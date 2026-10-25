@@ -2,9 +2,13 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from lava.api.schemas import (
+    DeploymentCreate,
+    DeploymentEventView,
+    DeploymentView,
     ErrorResponse,
     ProjectCreate,
     ProjectPatch,
@@ -14,9 +18,10 @@ from lava.api.schemas import (
     ServiceView,
 )
 from lava.application.control_plane import ControlPlane
+from lava.application.deployments import DeploymentService
 from lava.application.tenancy import Tenancy
 from lava.auth.dependencies import current_user
-from lava.db.base import User
+from lava.db.base import Deployment, DeploymentEvent, Service, User
 from lava.persistence.database import get_session
 
 router = APIRouter(
@@ -119,3 +124,87 @@ def update_service(
 @router.delete("/projects/{project_id}/services/{service_id}", response_model=ServiceView)
 def archive_service(project_id: UUID, service_id: UUID, user: Principal, session: Database):
     return ControlPlane(session).archive_service(user.id, str(project_id), str(service_id))
+
+
+@router.post(
+    "/projects/{project_id}/services/{service_id}/deployments",
+    response_model=DeploymentView,
+    status_code=201,
+)
+def create_deployment(
+    project_id: UUID, service_id: UUID, body: DeploymentCreate, user: Principal, session: Database
+):
+    return DeploymentService(session).create(
+        user.id, str(project_id), str(service_id), body.model_dump()
+    )
+
+
+@router.get(
+    "/projects/{project_id}/services/{service_id}/deployments", response_model=list[DeploymentView]
+)
+def list_deployments(
+    project_id: UUID,
+    service_id: UUID,
+    user: Principal,
+    session: Database,
+    limit: Limit = 50,
+    offset: Offset = 0,
+):
+    control = DeploymentService(session)
+    project, _ = control.tenancy.access(user.id, str(project_id))
+    service = session.scalar(
+        select(Service).where(Service.id == str(service_id), Service.project_id == project.id)
+    )
+    if service is None:
+        from lava.domain.control_plane import ControlPlaneError
+
+        raise ControlPlaneError(404, "not_found", "Resource not found")
+    return list(
+        session.scalars(
+            select(Deployment)
+            .where(Deployment.project_id == project.id, Deployment.service_id == service.id)
+            .order_by(Deployment.created_at.desc(), Deployment.id)
+            .limit(limit)
+            .offset(offset)
+        )
+    )
+
+
+@router.get(
+    "/projects/{project_id}/services/{service_id}/deployments/{deployment_id}",
+    response_model=DeploymentView,
+)
+def get_deployment(
+    project_id: UUID, service_id: UUID, deployment_id: UUID, user: Principal, session: Database
+):
+    control = DeploymentService(session)
+    project, _ = control.tenancy.access(user.id, str(project_id))
+    deployment = session.scalar(
+        select(Deployment).where(
+            Deployment.id == str(deployment_id),
+            Deployment.project_id == project.id,
+            Deployment.service_id == str(service_id),
+        )
+    )
+    if deployment is None:
+        from lava.domain.control_plane import ControlPlaneError
+
+        raise ControlPlaneError(404, "not_found", "Resource not found")
+    return deployment
+
+
+@router.get(
+    "/projects/{project_id}/services/{service_id}/deployments/{deployment_id}/events",
+    response_model=list[DeploymentEventView],
+)
+def deployment_events(
+    project_id: UUID, service_id: UUID, deployment_id: UUID, user: Principal, session: Database
+):
+    deployment = get_deployment(project_id, service_id, deployment_id, user, session)
+    return list(
+        session.scalars(
+            select(DeploymentEvent)
+            .where(DeploymentEvent.deployment_id == deployment.id)
+            .order_by(DeploymentEvent.created_at, DeploymentEvent.id)
+        )
+    )
