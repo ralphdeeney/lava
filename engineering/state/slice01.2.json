@@ -1,0 +1,21 @@
+{
+  "project": "LAVA",
+  "phase": "01",
+  "slice": "01.2",
+  "branch": "feat/phase01-slice02-browser-auth",
+  "base_commit": "2c78551bd9ecfd144a114c20c3716d07440a083f",
+  "status": "IMPLEMENT",
+  "repair_attempts": 0,
+  "previous_slice": {
+    "pr": 3,
+    "merge_commit": "2c78551bd9ecfd144a114c20c3716d07440a083f",
+    "evals_passed": 9,
+    "phase_evals_outstanding": 11,
+    "instabox": "passed actual run40167400907"
+  },
+  "verification_runs": [],
+  "browser": "not_run before source freeze",
+  "instabox": "candidate not_run; reviewed merge SHA via trusted-main only",
+  "background_coding_active": false,
+  "next_slice": "01.3 not started; requires01.2 verified and merged"
+}

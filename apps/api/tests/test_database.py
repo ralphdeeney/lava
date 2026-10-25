@@ -179,7 +179,7 @@ def test_edited_legacy_metadata_blocks_lossy_downgrade(field, value):
         with engine.connect() as connection:
             assert (
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "0002"
+                == "0003"
             )
     finally:
         # Delete only this test's legacy row, even when the current buggy guard downgraded it.
@@ -187,4 +187,113 @@ def test_edited_legacy_metadata_blocks_lossy_downgrade(field, value):
             connection.execute(text("DELETE FROM projects WHERE id = :id"), {"id": project_id})
         if "users" not in inspect(engine).get_table_names():
             subprocess.run(["alembic", "upgrade", "head"], cwd=api_root, check=True)
+        engine.dispose()
+
+
+@pytest.mark.integration
+def test_browser_migration_preserves_existing_owned_metadata():
+    from test_control_plane import API_ROOT, require_disposable_database
+
+    require_disposable_database()
+    subprocess.run(["alembic", "upgrade", "head"], cwd=API_ROOT, check=True)
+    subprocess.run(["alembic", "downgrade", "0002"], cwd=API_ROOT, check=True)
+    engine = create_engine(os.environ["LAVA_DATABASE_URL"])
+    owner_id, project_id, service_id, credential_id = (str(uuid4()) for _ in range(4))
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text("INSERT INTO users(id,name,is_active) VALUES (:id,:name,true)"),
+                {"id": owner_id, "name": "existing-" + uuid4().hex},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO projects(id,name,owner_id,description) VALUES (:id,'existing',:owner,'preserve')"
+                ),
+                {"id": project_id, "owner": owner_id},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO services(id,project_id,name,service_type,resources) VALUES (:id,:project,'existing','web',CAST(:resources AS jsonb))"
+                ),
+                {"id": service_id, "project": project_id, "resources": '{"cpu":1,"memory_mb":512}'},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO api_credentials(id,user_id,token_hash,expires_at) VALUES (:id,:owner,:digest,now()+INTERVAL '1 day')"
+                ),
+                {"id": credential_id, "owner": owner_id, "digest": uuid4().hex + uuid4().hex},
+            )
+        subprocess.run(["alembic", "upgrade", "head"], cwd=API_ROOT, check=True)
+        subprocess.run(["alembic", "upgrade", "head"], cwd=API_ROOT, check=True)
+        subprocess.run(["alembic", "check"], cwd=API_ROOT, check=True)
+        with engine.connect() as connection:
+            assert connection.execute(
+                text("SELECT owner_id,description FROM projects WHERE id=:id"), {"id": project_id}
+            ).one() == (owner_id, "preserve")
+            assert connection.execute(
+                text("SELECT project_id,resources FROM services WHERE id=:id"), {"id": service_id}
+            ).one() == (project_id, {"cpu": 1, "memory_mb": 512})
+            assert (
+                connection.execute(
+                    text("SELECT user_id FROM api_credentials WHERE id=:id"), {"id": credential_id}
+                ).scalar_one()
+                == owner_id
+            )
+            assert (
+                connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                == "0003"
+            )
+    finally:
+        with engine.begin() as connection:
+            connection.execute(text("DELETE FROM services WHERE id=:id"), {"id": service_id})
+            connection.execute(text("DELETE FROM projects WHERE id=:id"), {"id": project_id})
+            connection.execute(
+                text("DELETE FROM api_credentials WHERE id=:id"), {"id": credential_id}
+            )
+            connection.execute(text("DELETE FROM users WHERE id=:id"), {"id": owner_id})
+        subprocess.run(["alembic", "upgrade", "head"], cwd=API_ROOT, check=True)
+        engine.dispose()
+
+
+@pytest.mark.integration
+def test_browser_migration_refuses_lossy_downgrade():
+    import secrets
+
+    from sqlalchemy import delete
+    from sqlalchemy.orm import Session
+    from test_control_plane import API_ROOT, require_disposable_database
+
+    from lava.auth.accounts import provision_account
+    from lava.db.base import PasswordAccount, User
+
+    require_disposable_database()
+    subprocess.run(["alembic", "upgrade", "head"], cwd=API_ROOT, check=True)
+    engine = create_engine(os.environ["LAVA_DATABASE_URL"])
+    with Session(engine, expire_on_commit=False) as session:
+        user = provision_account(
+            session, "migration-browser-" + uuid4().hex, secrets.token_urlsafe(32)
+        )
+        owner_id = user.id
+    try:
+        result = subprocess.run(
+            ["alembic", "downgrade", "0002"], cwd=API_ROOT, capture_output=True, text=True
+        )
+        assert result.returncode != 0
+        assert "Downgrade refused" in result.stdout + result.stderr
+        with engine.connect() as connection:
+            assert (
+                connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                == "0003"
+            )
+            assert (
+                connection.execute(
+                    text("SELECT count(*) FROM password_accounts WHERE user_id=:id"),
+                    {"id": owner_id},
+                ).scalar_one()
+                == 1
+            )
+    finally:
+        with engine.begin() as connection:
+            connection.execute(delete(PasswordAccount).where(PasswordAccount.user_id == owner_id))
+            connection.execute(delete(User).where(User.id == owner_id))
         engine.dispose()

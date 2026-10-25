@@ -249,3 +249,47 @@ archive behavior, token expiry/revocation, constraints and rollback. CI publishe
 results and a scoped evaluation report; unimplemented Phase01 scenarios remain `not_run`.
 The trusted-main InstaBox workflow verifies the squash-merge commit after independent review;
 no unreviewed PR is dispatched with infrastructure credentials.
+
+## Slice01.2: browser authentication and dashboard
+
+After bootstrap and Compose startup, privately provision/reset a browser account:
+
+```sh
+docker compose exec api python -m lava.auth.accounts provision alice
+```
+
+This prompts without echo, confirms the password and revokes all prior browser sessions for
+that user. There are no default passwords or public registration. `--password-stdin` is only
+for a secure administrative stdin channel; never put passwords in command arguments/history,
+logs or source. Existing bearer provision/revoke commands remain independent.
+
+Open http://localhost:3000/login, then use Projects to create/manage real owned projects and
+nested service metadata. Account/session controls show the current session expiry and revoke
+current/all sessions. Logout invalidates the server record. No displayed state represents
+running customer containers. Desktop/mobile forms have labels, visible focus, navigation,
+empty/loading/error states and no fictional metrics.
+
+Set LAVA_BROWSER_ORIGIN to the exact browser origin; web ORIGIN must match. Compose forwards
+that value to both services and sets private LAVA_API_ORIGIN=http://api:8000. For HTTPS use
+LAVA_COOKIE_SECURE=true; production configuration requires both HTTPS and Secure cookies.
+When running separate production processes, set the private API URL on the SvelteKit server,
+not a PUBLIC_ browser variable. Do not trust arbitrary forwarded/client IP headers.
+
+For disposable real-PostgreSQL testing, retain LAVA_INTEGRATION=1 and
+LAVA_TEST_DATABASE_RESET=1 and a freshly allocated *_test database. After frozen install,
+frontend build and migrations:
+
+```sh
+pnpm exec playwright install --with-deps chromium
+uv run --project apps/api --locked python scripts/verify_browser.py
+```
+
+Managed Cloud can use existing Chromium via LAVA_E2E_CHROMIUM=/usr/bin/chromium when the
+Playwright CDN is not allowed. This is actual Chromium automation, not a mocked browser.
+The verifier starts loopback API/web processes, provisions random users, saves a private0600
+fixture and runs the16 desktop/mobile journeys without mocked endpoints. Test-only fixture
+helpers adjust only owned test sessions/buckets, never production data or public endpoints.
+Raw logs remain under ignored harness-private paths; public sanitized outcomes are under
+`test-results/e2e/public`. No traces/videos or credentials are published. The private account
+file is removed and owned users/projects/services/sessions cleaned even after ordinaryfailure.
+Do not upload the entire test-results directory. CI publishes only explicit sanitized paths.

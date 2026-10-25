@@ -11,6 +11,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from lava.api.routes import router
+from lava.auth.routes import router as auth_router
 from lava.core.logging import configure_logging
 from lava.core.settings import Settings, get_settings
 from lava.domain.control_plane import ControlPlaneError
@@ -25,7 +26,7 @@ def check_database(settings: Annotated[Settings, Depends(get_settings)]) -> bool
             connection.execute(text("SELECT 1"))
             # Readiness requires the current schema, not just an accepting TCP socket.
             revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-            return revision == "0002"
+            return revision == "0003"
     except SQLAlchemyError:
         structlog.get_logger().warning("database_unavailable")
         return False
@@ -48,6 +49,9 @@ async def log_request(request: Request, call_next):
     started = monotonic()
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
+    if request.url.path.startswith("/auth/"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
     structlog.get_logger().info(
         "http_request",
         request_id=request_id,
@@ -99,3 +103,5 @@ def persistence_error(request: Request, error: SQLAlchemyError) -> JSONResponse:
 
 
 app.include_router(router)
+
+app.include_router(auth_router)

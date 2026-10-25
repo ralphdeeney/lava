@@ -3,8 +3,8 @@
     "id": "EVAL-001",
     "category": "authentication",
     "mandatory": true,
-    "title": "Register a new user and authenticate",
-    "assertions": "session creation, cookie flags and authenticated identity",
+    "title": "Administratively provision an account and authenticate",
+    "assertions": "trusted administrative provisioning (no public signup required), real browser session creation, cookie flags and authenticated identity",
     "critical": true,
     "execution": "deterministic pytest/Playwright/real infrastructure; independent evidence required"
   },

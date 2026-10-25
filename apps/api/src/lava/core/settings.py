@@ -1,7 +1,8 @@
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit
 
-from pydantic import SecretStr, field_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -25,6 +26,46 @@ class Settings(BaseSettings):
         return value
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    browser_origin: str = "http://localhost:3000"
+    cookie_secure: bool = False
+    session_ttl_seconds: int = 3600
+
+    @field_validator("browser_origin")
+    @classmethod
+    def valid_browser_origin(cls, value: str) -> str:
+        try:
+            parsed = urlsplit(value)
+            if (
+                parsed.scheme not in ("http", "https")
+                or not parsed.hostname
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.path
+                or parsed.query
+                or parsed.fragment
+                or parsed.port == 0
+            ):
+                raise ValueError
+        except ValueError:
+            raise ValueError(
+                "browser_origin must be an HTTP(S) origin without credentials or path"
+            ) from None
+        return value
+
+    @field_validator("session_ttl_seconds")
+    @classmethod
+    def bounded_session_lifetime(cls, value: int) -> int:
+        if not 60 <= value <= 86400:
+            raise ValueError("session_ttl_seconds must be between 60 and 86400")
+        return value
+
+    @model_validator(mode="after")
+    def production_browser_security(self):
+        if self.environment == "production" and (
+            not self.cookie_secure or not self.browser_origin.startswith("https://")
+        ):
+            raise ValueError("Production requires Secure cookies and an HTTPS browser origin")
+        return self
 
 
 @lru_cache

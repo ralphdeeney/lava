@@ -39,12 +39,23 @@ jobs:
       - run: mkdir -p test-results
       - name: Real PostgreSQL API and migration tests
         run: cd apps/api && uv run --locked pytest tests -m integration --junitxml=../../test-results/postgresql.xml
+      - name: Install pinned browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Real desktop and mobile browser journeys
+        run: uv run --project apps/api --locked python scripts/verify_browser.py
       - name: Reconcile scoped control-plane evaluations
         run: >-
           python3 evals/runners/control_plane.py
           --junit test-results/postgresql.xml
           --source-commit "$(git rev-parse HEAD)"
           --environment real-postgresql
+          --output evals/reports/slice01-control-plane.json
+      - name: Reconcile browser session and dashboard evaluations
+        run: >-
+          python3 evals/runners/browser_auth.py
+          --backend-junit test-results/postgresql.xml
+          --browser-report test-results/e2e/public/report.json
+          --source-commit "$(git rev-parse HEAD)"
           --output evals/reports/phase01-current.json
       - name: Publish source-bound test and evaluation evidence
         if: always()
@@ -54,6 +65,8 @@ jobs:
           path: |
             test-results/postgresql.xml
             evals/reports/phase01-current.json
+            evals/reports/slice01-control-plane.json
+            test-results/e2e/public
           if-no-files-found: warn
           retention-days: 7
       - run: mkdir -p "$RUNNER_TEMP/lava-verification"

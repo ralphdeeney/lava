@@ -24,7 +24,7 @@ No Railpack, BuildKit daemon, Traefik or worker service is installed in Phase 00
 
 Compose publishes frontend/API on host loopback only. PostgreSQL has no host port.
 A browser can load the dashboard independently of API readiness; the page intentionally makes
-no claim about live deployment state. No deployment execution or browser account/session surface exists.
+no claim about live deployment state. No deployment execution exists; browser sessions are described below for Slice01.2.
 
 ## Slice01.1 control-plane boundary
 
@@ -41,3 +41,11 @@ digest to an active persistent user, provisioned outside public HTTP. This is a 
 boundary, not the future browser account/session product. See ADR0001 for the trust model.
 No API service imports/invokes Docker, runtime, build or routing adapters. Service desired-state
 changes describe metadata only; DELETE archives metadata and cannot destroy infrastructure.
+
+## Slice01.2 browser boundary
+
+FastAPI now owns Argon2id password accounts and hashed opaque browser sessions (migration0003).
+SvelteKit uses a narrow same-origin BFF and server-side protected layouts; browsers never
+receive API bearer tokens. Cookie sessions and API tokens resolve to the same existing user
+ownership checks. Origin+session-boundCSRF protects browser mutations; invalid bearer headers
+cannot fall back to cookies. See ADR0002 for provisioning, expiry/revocation and trust limits.
