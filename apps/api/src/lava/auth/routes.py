@@ -101,7 +101,7 @@ def login_browser(
         COOKIE_NAME,
         raw_token,
         max_age=settings.session_ttl_seconds,
-        expires=browser_session.expires_at,
+        expires=browser_session.expires_at.astimezone(UTC),
         path="/",
         secure=settings.cookie_secure,
         httponly=True,

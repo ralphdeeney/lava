@@ -4,8 +4,8 @@
   "slice": "01.2",
   "branch": "feat/phase01-slice02-browser-auth",
   "base_commit": "2c78551bd9ecfd144a114c20c3716d07440a083f",
-  "status": "IMPLEMENT",
-  "repair_attempts": 0,
+  "status": "REPAIR",
+  "repair_attempts": 1,
   "previous_slice": {
     "pr": 3,
     "merge_commit": "2c78551bd9ecfd144a114c20c3716d07440a083f",
@@ -13,9 +13,53 @@
     "phase_evals_outstanding": 11,
     "instabox": "passed actual run40167400907"
   },
-  "verification_runs": [],
+  "verification_runs": [
+    {
+      "stage": "initial",
+      "source_commit": "cc202fd8f91e36b8aad86011e75cab7848d7f32d",
+      "source_tree_clean": true,
+      "backend_and_engineering": {
+        "passed": 239,
+        "failed": 19,
+        "skipped": 0
+      },
+      "browser": {
+        "passed": 0,
+        "failed": 16,
+        "skipped": 0,
+        "real_api": true,
+        "real_postgresql": true,
+        "projects": [
+          "desktop",
+          "mobile"
+        ]
+      },
+      "unit": "32 passed",
+      "engineering": "130 passed",
+      "svelte": "passed zero errors/warnings",
+      "production_build": "passed",
+      "browser_types": "passed",
+      "format": "passed",
+      "ruff": "failed3longSQLstrings",
+      "compose": "failed obsolete placeholder marker; owned cleanup passed",
+      "evaluations": {
+        "passed": 9,
+        "blocked": 4,
+        "not_run": 7
+      },
+      "failures": [
+        "cookie Expires datetime timezone identity causes successful login500",
+        "HTTPS+cookieSecurefalse allowed outside production",
+        "obsolete placeholder functional check",
+        "raw pytest failure diagnostics can expose disposable test session material; initial artifacts private only",
+        "3 long migration-test SQL strings"
+      ]
+    }
+  ],
   "browser": "not_run before source freeze",
   "instabox": "candidate not_run; reviewed merge SHA via trusted-main only",
   "background_coding_active": false,
-  "next_slice": "01.3 not started; requires01.2 verified and merged"
+  "next_slice": "01.3 not started; requires01.2 verified and merged",
+  "repair": "One aggregate: normalize UTC expiry, require Secure for every HTTPS origin, sanitize pytest output/JUnit while preserving status and metadata, assert real POST login form instead of removed placeholder, regression tests and style.",
+  "next_action": "Exactly one clean-source full retest; any remaining failure blocks slice and01.3."
 }

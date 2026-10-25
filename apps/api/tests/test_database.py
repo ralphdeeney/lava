@@ -207,19 +207,22 @@ def test_browser_migration_preserves_existing_owned_metadata():
             )
             connection.execute(
                 text(
-                    "INSERT INTO projects(id,name,owner_id,description) VALUES (:id,'existing',:owner,'preserve')"
+                    "INSERT INTO projects(id,name,owner_id,description) "
+                    "VALUES (:id,'existing',:owner,'preserve')"
                 ),
                 {"id": project_id, "owner": owner_id},
             )
             connection.execute(
                 text(
-                    "INSERT INTO services(id,project_id,name,service_type,resources) VALUES (:id,:project,'existing','web',CAST(:resources AS jsonb))"
+                    "INSERT INTO services(id,project_id,name,service_type,resources) "
+                    "VALUES (:id,:project,'existing','web',CAST(:resources AS jsonb))"
                 ),
                 {"id": service_id, "project": project_id, "resources": '{"cpu":1,"memory_mb":512}'},
             )
             connection.execute(
                 text(
-                    "INSERT INTO api_credentials(id,user_id,token_hash,expires_at) VALUES (:id,:owner,:digest,now()+INTERVAL '1 day')"
+                    "INSERT INTO api_credentials(id,user_id,token_hash,expires_at) "
+                    "VALUES (:id,:owner,:digest,now()+INTERVAL '1 day')"
                 ),
                 {"id": credential_id, "owner": owner_id, "digest": uuid4().hex + uuid4().hex},
             )

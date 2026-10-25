@@ -38,7 +38,9 @@ jobs:
       - run: ./scripts/check.sh
       - run: mkdir -p test-results
       - name: Real PostgreSQL API and migration tests
-        run: cd apps/api && uv run --locked pytest tests -m integration --junitxml=../../test-results/postgresql.xml
+        run: >-
+          uv run --project apps/api --locked python scripts/run_pytest.py
+          --cwd apps/api --junit test-results/postgresql.xml -- tests -m integration
       - name: Install pinned browser
         run: pnpm exec playwright install --with-deps chromium
       - name: Real desktop and mobile browser journeys

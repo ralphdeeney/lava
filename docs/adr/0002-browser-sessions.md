@@ -16,7 +16,8 @@ fresh OS-random32byte opaque session material, stores only its SHA256 digest, an
 previous session cookie when present. Login/session JSON returns user metadata, expiry and a
 session-bound CSRF token; it never returns the session identifier. Cookies are host-only,
 HttpOnly,SameSite=Lax,Path=/,with bounded Max-Age. Secure cookies and an HTTPS browser origin are
-mandatory in production configuration; local loopback development explicitly permits HTTP.
+mandatory for every HTTPS origin, in all environments; production additionally requires HTTPS.
+Local loopback development explicitly permits HTTP.
 Session lifetime defaults1hour, configurable60seconds–24hours. GET/session and every protected
 operation check expiry, revocation and active identity server-side. Logout clears the cookie
 and invalidates the server record. Logout-all revokes all browser sessions for the principal.

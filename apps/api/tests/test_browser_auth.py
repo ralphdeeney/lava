@@ -3,7 +3,9 @@
 import secrets
 import subprocess
 from datetime import UTC, datetime, timedelta
+from email.utils import parsedate_to_datetime
 from hashlib import sha256
+from http.cookies import SimpleCookie
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -97,6 +99,11 @@ def test_browser_login_and_session_are_authenticated(browser_auth):
     assert datetime.fromisoformat(response.json()["expires_at"]) > datetime.now(UTC)
     cookie = response.headers["set-cookie"].lower()
     assert "httponly" in cookie and "samesite=lax" in cookie and "path=/" in cookie
+    parsed_cookie = SimpleCookie()
+    parsed_cookie.load(response.headers["set-cookie"])
+    expires = parsed_cookie["lava_session"]["expires"]
+    assert expires.endswith("GMT")
+    assert parsedate_to_datetime(expires).utcoffset() == timedelta(0)
     session = fixture.client.get("/auth/session")
     assert session.status_code == 200
     assert session.json()["user"] == response.json()["user"]
@@ -340,3 +347,17 @@ def test_browser_errors_never_echo_credentials(browser_auth, caplog):
     assert response.status_code == 422
     assert fixture.password not in response.text
     assert fixture.password not in caplog.text
+
+
+@pytest.mark.parametrize("environment", ["development", "test", "production"])
+def test_https_browser_origin_never_allows_insecure_cookie(browser_auth, environment):
+    from pydantic import ValidationError
+
+    from lava.core.settings import Settings, get_settings
+
+    values = get_settings().model_dump()
+    values.update(
+        environment=environment, browser_origin="https://lava.example", cookie_secure=False
+    )
+    with pytest.raises(ValidationError):
+        Settings(**values)

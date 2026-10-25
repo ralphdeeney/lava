@@ -61,6 +61,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def production_browser_security(self):
+        if self.browser_origin.startswith("https://") and not self.cookie_secure:
+            raise ValueError("HTTPS browser origins require Secure cookies")
         if self.environment == "production" and (
             not self.cookie_secure or not self.browser_origin.startswith("https://")
         ):

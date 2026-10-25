@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from html.parser import HTMLParser
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,38 @@ import tempfile
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class LoginFormParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.active = False
+        self.inputs = {}
+        self.valid = False
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        if tag == "form":
+            self.active = attributes.get("method", "get").lower() == "post"
+            self.inputs = {}
+        elif tag == "input" and self.active:
+            self.inputs[attributes.get("name")] = attributes.get("type", "text")
+
+    def handle_endtag(self, tag):
+        if tag == "form":
+            self.valid = self.valid or (
+                self.active
+                and "username" in self.inputs
+                and self.inputs.get("password") == "password"
+            )
+            self.active = False
+
+
+def assert_login_page(body: bytes) -> None:
+    parser = LoginFormParser()
+    parser.feed(body.decode("utf-8"))
+    if not parser.valid:
+        raise RuntimeError("Frontend login form functional check failed")
 
 
 def redact(value: str, credentials: list[str]) -> str:
@@ -278,8 +311,8 @@ def main() -> int:
                         raise RuntimeError(f"HTTP check failed: {service}")
                     if expected and json.loads(body) != {"status": expected}:
                         raise RuntimeError(f"Unexpected {path} response")
-                    if expected is None and b"A foundation for shipping." not in body:
-                        raise RuntimeError("Frontend functional check failed")
+                    if expected is None:
+                        assert_login_page(body)
         command(
             compose
             + [
