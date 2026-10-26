@@ -339,14 +339,24 @@ def main():
                             "Cancellation fixture exited before BuildKit execution"
                         )
                     active = subprocess.check_output(["ps", "-eo", "args"], text=True)
+                    buildkit = subprocess.run(
+                        ["docker", "top", "buildx_buildkit_lava-fixtures0"],
+                        capture_output=True,
+                        timeout=5,
+                        check=False,
+                    )
                     if (
                         "docker buildx build" in active
                         and "build-fixtures/buildkit-cancel" in active
+                        and buildkit.returncode == 0
+                        and b"sleep 180" in buildkit.stdout
                     ):
                         break
                     time.sleep(0.2)
                 else:
-                    raise RuntimeError("Timed out waiting for actual BuildKit process")
+                    raise RuntimeError(
+                        "Timed out waiting for the actual BuildKit solve process"
+                    )
                 with Session(engine) as db:
                     job = db.scalar(
                         select(DeploymentJob).where(
@@ -391,6 +401,22 @@ def main():
                     raise RuntimeError(
                         "BuildKit terminal state or cleanup was inconsistent"
                     )
+                expected_reason = (
+                    "cancelled"
+                    if cancel
+                    else "process_failed"
+                    if fixture == "buildkit-fail"
+                    else "timeout"
+                )
+                receipt = json.loads(
+                    (runtime / "processes" / execution.id / "result.json").read_text()
+                )
+                if (
+                    receipt.get("execution_id") != execution.id
+                    or receipt.get("status") != expected.upper()
+                    or receipt.get("failure_code") != expected_reason
+                ):
+                    raise RuntimeError("BuildKit failure classification was not proven")
             active_builder = subprocess.run(
                 [
                     "docker",

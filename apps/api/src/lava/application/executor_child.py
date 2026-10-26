@@ -38,7 +38,9 @@ def stop_owned_buildkit() -> bool:
         return False
 
 
-def write_receipt(directory: Path, status: str, spec: dict) -> None:
+def write_receipt(
+    directory: Path, status: str, spec: dict, failure_code: str | None = None
+) -> None:
     temporary = directory / "result.tmp"
     with temporary.open("x") as stream:
         receipt = {
@@ -46,6 +48,8 @@ def write_receipt(directory: Path, status: str, spec: dict) -> None:
             "execution_id": directory.name,
             "receipt_nonce": spec["receipt_nonce"],
         }
+        if failure_code is not None:
+            receipt["failure_code"] = failure_code
         if status == "COMPLETED" and spec.get("kind") == "fixture-build":
             receipt["artifact"] = json.loads((directory / "artifact.json").read_text())
         json.dump(receipt, stream)
@@ -110,18 +114,23 @@ def main() -> None:
     )
     deadline = time.monotonic() + spec["timeout"]
     status = "UNKNOWN"
+    failure_code = None
     try:
         while True:
             # WNOWAIT reserves the leader PID until the entire owned group is killed.
             ended = os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
             if stop or (directory / "cancel").exists():
                 status = "CANCELLED"
+                failure_code = "cancelled"
                 break
             if time.monotonic() >= deadline:
                 status = "FAILED"
+                failure_code = "timeout"
                 break
             if ended is not None:
                 status = "COMPLETED" if ended.si_status == 0 else "FAILED"
+                if status == "FAILED":
+                    failure_code = "process_failed"
                 break
             time.sleep(0.05)
     finally:
@@ -137,7 +146,8 @@ def main() -> None:
             # This builder is created solely for this disposable verifier.
             if not stop_owned_buildkit():
                 status = "UNKNOWN"
-        write_receipt(directory, status, spec)
+                failure_code = "builder_stop_unconfirmed"
+        write_receipt(directory, status, spec, failure_code)
 
 
 if __name__ == "__main__":

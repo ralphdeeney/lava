@@ -67,6 +67,29 @@ class ExecutorService:
             identity = session.get(BuildExecution, execution_id)
             if identity is None:
                 return "UNKNOWN"
+            if identity.status in {"COMPLETED", "CANCELLED", "FAILED"}:
+                return identity.status
+            job = session.get(DeploymentJob, identity.job_id)
+            needs_stop = (
+                job.status != "running"
+                or job.lease_generation != identity.claim_generation
+                or job.leased_until is None
+                or job.leased_until <= datetime.now(UTC)
+                or job.cancellation_requested_at is not None
+            )
+        # External process termination can take seconds. Never hold the job row
+        # lock while waiting: the live worker must still be able to renew its lease.
+        observed = (
+            self.supervisor.cancel(execution_id)
+            if needs_stop
+            else self.supervisor.status(execution_id)
+        )
+        artifact = (
+            self.supervisor.result(execution_id).get("artifact", {})
+            if observed == "COMPLETED"
+            else {}
+        )
+        with Session(self.engine) as session:
             job = session.scalar(
                 select(DeploymentJob).where(DeploymentJob.id == identity.job_id).with_for_update()
             )
@@ -75,14 +98,18 @@ class ExecutorService:
             )
             if execution.status in {"COMPLETED", "CANCELLED", "FAILED"}:
                 return execution.status
-            stale = (
+            currently_stopping = (
                 job.status != "running"
                 or job.lease_generation != execution.claim_generation
                 or job.leased_until is None
                 or job.leased_until <= datetime.now(UTC)
+                or job.cancellation_requested_at is not None
             )
-            if stale or job.cancellation_requested_at is not None:
-                observed = self.supervisor.cancel(execution_id)
+            if currently_stopping and not needs_stop:
+                # A cancellation or lease loss arrived while observing the process.
+                # The next bounded scan will stop it before publishing a result.
+                execution.status = "UNKNOWN"
+            elif currently_stopping:
                 execution.status = (
                     "COMPLETED"
                     if observed == "COMPLETED" and job.cancellation_requested_at is None
@@ -91,10 +118,8 @@ class ExecutorService:
                     else "UNKNOWN"
                 )
             else:
-                observed = self.supervisor.status(execution_id)
                 execution.status = observed
             if execution.status == "COMPLETED" and execution.kind == "fixture-build":
-                artifact = self.supervisor.result(execution_id).get("artifact", {})
                 digest = artifact.get("image_digest", "")
                 if (
                     not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)

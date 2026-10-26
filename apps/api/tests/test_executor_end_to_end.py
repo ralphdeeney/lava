@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from test_executor_authorization import claimed  # noqa: F401, F811
 
@@ -136,6 +136,40 @@ def test_completed_fixture_reply_has_verified_digest(claimed, tmp_path, monkeypa
         "mode": "fixture-build",
         "image_digest": digest,
     }
+
+
+def test_cancellation_wait_does_not_hold_worker_lease_row(claimed, tmp_path, monkeypatch):  # noqa: F811
+    engine, request = claimed
+    with Session(engine) as db:
+        authorize(db, request)
+        job = db.get(DeploymentJob, request.job_id)
+        job.cancellation_requested_at = datetime.now(UTC)
+        db.commit()
+    service = ExecutorService(engine, tmp_path / "spool")
+    entered = threading.Event()
+    release = threading.Event()
+    outcomes = []
+
+    def slow_cancel(_):
+        entered.set()
+        assert release.wait(timeout=5)
+        return "CANCELLED"
+
+    monkeypatch.setattr(service.supervisor, "cancel", slow_cancel)
+    thread = threading.Thread(
+        target=lambda: outcomes.append(service.scan_one(request.execution_id))
+    )
+    thread.start()
+    try:
+        assert entered.wait(timeout=5)
+        with Session(engine) as db:
+            db.execute(text("SET LOCAL lock_timeout = '500ms'"))
+            DeploymentWorker(db, request.lease_owner).heartbeat(request.job_id, request.lease_token)
+    finally:
+        release.set()
+        thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert outcomes == ["CANCELLED"]
 
 
 def test_real_daemon_start_result_and_duplicate_submission(daemon):

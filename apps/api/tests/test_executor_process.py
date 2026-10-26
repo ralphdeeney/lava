@@ -1,3 +1,4 @@
+import json
 import time
 from uuid import uuid4
 
@@ -22,6 +23,8 @@ def test_cancel_stops_owned_process_and_child():
     assert supervisor.cancel(identity) == "CANCELLED"
     assert process.poll() is not None
     assert supervisor.cancel(identity) == "CANCELLED"
+    receipt = json.loads((supervisor.root / identity / "result.json").read_text())
+    assert receipt["failure_code"] == "cancelled"
 
 
 def test_timeout_and_unrelated_process_survive():
@@ -36,6 +39,8 @@ def test_timeout_and_unrelated_process_survive():
         while supervisor.status(identity) == "RUNNING" and time.monotonic() < deadline:
             time.sleep(0.05)
         assert supervisor.status(identity) == "FAILED"
+        receipt = json.loads((supervisor.root / identity / "result.json").read_text())
+        assert receipt["failure_code"] == "timeout"
         assert unrelated.poll() is None
     finally:
         unrelated.terminate()
@@ -51,6 +56,20 @@ def test_duplicate_execution_identity_is_rejected():
             supervisor.start(identity, ["sleep", "10"], timeout=20)
     finally:
         supervisor.cancel(identity)
+
+
+def test_failed_process_has_distinct_durable_reason(tmp_path):
+    import sys
+
+    supervisor = ProcessSupervisor(tmp_path / "spool")
+    identity = str(uuid4())
+    supervisor.start(identity, [sys.executable, "-c", "raise SystemExit(42)"], timeout=3)
+    deadline = time.monotonic() + 3
+    while supervisor.status(identity) == "RUNNING" and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert supervisor.status(identity) == "FAILED"
+    receipt = json.loads((supervisor.root / identity / "result.json").read_text())
+    assert receipt["failure_code"] == "process_failed"
 
 
 def test_forced_group_cleanup_stops_term_ignoring_child(tmp_path):
