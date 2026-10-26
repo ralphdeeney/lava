@@ -53,6 +53,30 @@ def wait_http(url: str, process: subprocess.Popen) -> None:
     raise RuntimeError("Application readiness timeout")
 
 
+def public_failure_summary(report: dict, failures: list[dict]) -> list[dict]:
+    """Expose only already-public test identities and a coarse error category."""
+    categories = {}
+    for entry in failures:
+        diagnostic = str(entry.get("diagnostic", "")).casefold()
+        category = (
+            "timeout"
+            if "timeout" in diagnostic
+            else "assertion"
+            if "expect" in diagnostic
+            else "runtime"
+        )
+        categories[(entry.get("name"), entry.get("project"))] = category
+    return [
+        {
+            "name": entry["name"],
+            "project": entry["project"],
+            "kind": categories.get((entry["name"], entry["project"]), "unknown"),
+        }
+        for entry in report.get("tests", [])
+        if entry.get("status") == "failed"
+    ]
+
+
 def main() -> int:
     out = ROOT / "test-results/e2e"
     private = out / "harness-private"
@@ -157,6 +181,21 @@ def main() -> int:
         with os.fdopen(descriptor, "w") as log:
             log.write(command.stdout + command.stderr)
         code = command.returncode
+        if code and (public / "report.json").is_file():
+            report = json.loads((public / "report.json").read_text())
+            failure_path = out / "private/failures.json"
+            failures = (
+                json.loads(failure_path.read_text()) if failure_path.is_file() else []
+            )
+            print(
+                json.dumps(
+                    {
+                        "browser_failed_journeys": public_failure_summary(
+                            report, failures
+                        )
+                    }
+                )
+            )
         print(
             json.dumps(
                 {
