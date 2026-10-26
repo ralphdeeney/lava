@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sys
+import threading
 import time
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -328,18 +329,23 @@ def test_claim_disconnect_does_not_lose_job(worker_database):
 def test_heartbeat_disconnect_blocks_completion(worker_database, monkeypatch):
     engine, job_id, deployment_id = worker_database
     original = DeploymentWorker.heartbeat
+    heartbeat_started = threading.Event()
+    disconnect_heartbeat = threading.Event()
 
     def disconnected_heartbeat(self, job_id, token):
+        heartbeat_started.set()
+        assert disconnect_heartbeat.wait(timeout=5)
         pid = self.session.scalar(text("SELECT pg_backend_pid()"))
         with engine.begin() as killer:
-            killer.scalar(text("SELECT pg_terminate_backend(:pid)"), {"pid": pid})
+            assert killer.scalar(text("SELECT pg_terminate_backend(:pid)"), {"pid": pid})
         original(self, job_id, token)
 
     monkeypatch.setattr(DeploymentWorker, "heartbeat", disconnected_heartbeat)
 
     class SlowExecutor:
         def run(self, cancelled):
-            time.sleep(1.2)
+            assert heartbeat_started.wait(timeout=5)
+            disconnect_heartbeat.set()
             return "success"
 
     with Session(engine) as session:

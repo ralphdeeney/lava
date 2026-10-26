@@ -275,7 +275,11 @@ class DeploymentWorker:
                     is not None
                 )
             )
-            if lease_lost.is_set():
+            # Resolve an in-flight renewal before publishing an outcome. Otherwise
+            # its database failure can be observed only after completion commits.
+            stop_heartbeat.set()
+            heartbeat_thread.join(timeout=max(1, self.lease_seconds / 3 + 1))
+            if heartbeat_thread.is_alive() or lease_lost.is_set():
                 raise LeaseLost("heartbeat failed or lease was reclaimed")
             if outcome == "cancelled":
                 self.cancel(job.id)
