@@ -44,7 +44,7 @@ jobs:
         if: always()
         with:
           name: worker-prerequisite-evidence-${{ github.sha }}
-          path: apps/api/test-results/worker-reliability.xml
+          path: test-results/worker-reliability.xml
           retention-days: 7
   fixture-builds:
     needs: worker-prerequisites

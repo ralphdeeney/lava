@@ -146,4 +146,12 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as error:
+        message = re.sub(
+            r"(?i)(password|token|secret)\s*[=:]\s*\S+", r"\1=[REDACTED]", str(error)
+        )
+        message = message[-3000:].replace("\n", "%0A")
+        print(f"::error file=scripts/verify_fixture_builds.py::{message}", flush=True)
+        raise SystemExit(1) from None
