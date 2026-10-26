@@ -19,6 +19,7 @@ def upgrade() -> None:
         sa.Column("source_commit_sha", sa.String(40), nullable=False),
         sa.Column("configuration_revision", sa.Integer(), nullable=False),
         sa.Column("fixture", sa.String(20), nullable=False),
+        sa.Column("kind", sa.String(20), nullable=False, server_default="controlled-probe"),
         sa.Column("status", sa.String(20), nullable=False, server_default="UNKNOWN"),
         sa.Column("image_digest", sa.String(71)),
         sa.Column(

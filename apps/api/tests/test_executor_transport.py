@@ -27,6 +27,8 @@ def request():
         "status",
         "b" * 64,
         int(time()) + 20,
+        lease_owner="test-worker",
+        lease_token="test-lease-token",
     )
 
 

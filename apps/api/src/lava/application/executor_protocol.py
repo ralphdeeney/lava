@@ -9,7 +9,7 @@ import hmac
 import json
 import re
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from uuid import UUID
 
 
@@ -25,11 +25,42 @@ class ExecutorRequest:
     operation: str
     nonce: str
     expires_at: int
+    key_id: str = "local-v1"
     version: int = 1
     lease_owner: str = ""
-    lease_token: str = ""
+    lease_token: str = field(default="", repr=False)
 
     def validate(self, now: float) -> None:
+        for value in (
+            self.execution_id,
+            self.job_id,
+            self.deployment_id,
+            self.source_commit,
+            self.fixture,
+            self.operation,
+            self.nonce,
+            self.lease_owner,
+            self.lease_token,
+            self.key_id,
+        ):
+            if type(value) is not str:
+                raise ValueError("Invalid string field")
+        if (
+            self.key_id != "local-v1"
+            or not 1 <= len(self.lease_owner) <= 100
+            or not 1 <= len(self.lease_token) <= 256
+        ):
+            raise ValueError("Invalid scoped credential identity")
+        if any(
+            type(value) is not int
+            for value in (
+                self.version,
+                self.expires_at,
+                self.claim_generation,
+                self.configuration_revision,
+            )
+        ):
+            raise ValueError("Invalid numeric field")
         if self.version != 1:
             raise ValueError("Unsupported executor protocol")
         for identifier in (self.execution_id, self.job_id, self.deployment_id):

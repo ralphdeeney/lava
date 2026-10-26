@@ -15,8 +15,9 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from lava.application.deployments import DeploymentService
+from lava.application.executor_client import ExecutionUncertain
 from lava.core.settings import Settings, get_settings
-from lava.db.base import Deployment, DeploymentJob
+from lava.db.base import BuildExecution, Deployment, DeploymentJob
 
 log = structlog.get_logger()
 
@@ -73,6 +74,14 @@ class DeploymentWorker:
                     ),
                     (DeploymentJob.status == "running") & (DeploymentJob.leased_until < now),
                 )
+            )
+            .where(
+                ~select(BuildExecution.id)
+                .where(
+                    BuildExecution.job_id == DeploymentJob.id,
+                    BuildExecution.status.in_(["RUNNING", "UNKNOWN"]),
+                )
+                .exists()
             )
             .order_by(DeploymentJob.priority.desc(), DeploymentJob.available_at, DeploymentJob.id)
             .with_for_update(skip_locked=True)
@@ -194,11 +203,15 @@ class DeploymentWorker:
             self.session.rollback()
             raise
 
-    def process_once(self, executor: SimulatedExecutor | None = None) -> bool:
+    def process_once(
+        self, executor: SimulatedExecutor | None = None, *, executor_factory=None
+    ) -> bool:
         claimed = self.claim()
         if claimed is None:
             return False
         job, token = claimed
+        if executor_factory is not None:
+            executor = executor_factory(job, self.session.get(Deployment, job.deployment_id), token)
         executor = executor or SimulatedExecutor()
         stop_heartbeat = threading.Event()
         lease_lost = threading.Event()
@@ -255,6 +268,9 @@ class DeploymentWorker:
                 self.complete(job.id, token, outcome == "success")
         except LeaseLost:
             log.warning("worker_lease_lost", job_id=job.id, worker_id=self.worker_id)
+        except ExecutionUncertain:
+            self.session.rollback()
+            log.warning("worker_execution_uncertain", job_id=job.id, worker_id=self.worker_id)
         finally:
             stop_heartbeat.set()
             heartbeat_thread.join(timeout=max(1, self.lease_seconds / 3 + 1))
@@ -272,6 +288,25 @@ def run_worker(
 
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
+    executor_factory = None
+    if settings.worker_executor_mode == "controlled-probe":
+        from pathlib import Path
+
+        from lava.application.executor_client import SocketExecutor
+        from lava.executor import load_key
+
+        key = load_key(Path(settings.executor_key_file))
+
+        def executor_factory(job, deployment, token):
+            return SocketExecutor(
+                Path(settings.executor_socket),
+                key,
+                job,
+                deployment,
+                token,
+                settings.executor_fixture,
+            )
+
     while not stop.is_set():
         try:
             with session_factory() as session:
@@ -282,7 +317,7 @@ def run_worker(
                     settings.worker_max_attempts,
                     settings.worker_heartbeat_interval_seconds,
                     settings.worker_retry_backoff_seconds,
-                ).process_once()
+                ).process_once(executor_factory=executor_factory)
             if not processed:
                 stop.wait(settings.worker_poll_interval_seconds)
         except Exception as error:

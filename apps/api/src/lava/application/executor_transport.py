@@ -4,6 +4,7 @@ The handler must check durable nonce and lease ownership before any side effect.
 """
 
 import asyncio
+import contextlib
 import json
 import os
 import socket
@@ -11,6 +12,8 @@ import struct
 from collections.abc import Callable
 from dataclasses import fields
 from pathlib import Path
+
+from sqlalchemy.exc import SQLAlchemyError
 
 from lava.application.executor_protocol import ExecutorRequest, authenticate
 
@@ -73,10 +76,13 @@ class ExecutorSocket:
                     asyncio.LimitOverrunError,
                 ):
                     response = '{"error":"rejected"}'
+                except SQLAlchemyError:
+                    response = '{"error":"unavailable"}'
                 writer.write(response.encode() + b"\n")
                 await writer.drain()
                 if response == '{"error":"rejected"}':
                     break
         finally:
             writer.close()
-            await writer.wait_closed()
+            with contextlib.suppress(ConnectionError):
+                await writer.wait_closed()

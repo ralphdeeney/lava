@@ -20,13 +20,14 @@ def reconcile(session: Session, execution_id: str, observed: str) -> str:
     if observed not in {"RUNNING", "COMPLETED", "CANCELLED", "FAILED", "UNKNOWN"}:
         raise ValueError("Invalid executor observation")
     try:
-        execution = session.scalar(
-            select(BuildExecution).where(BuildExecution.id == execution_id).with_for_update()
-        )
-        if execution is None:
+        identity = session.get(BuildExecution, execution_id)
+        if identity is None:
             raise StaleExecution("Execution not found")
         job = session.scalar(
-            select(DeploymentJob).where(DeploymentJob.id == execution.job_id).with_for_update()
+            select(DeploymentJob).where(DeploymentJob.id == identity.job_id).with_for_update()
+        )
+        execution = session.scalar(
+            select(BuildExecution).where(BuildExecution.id == execution_id).with_for_update()
         )
         if (
             job is None

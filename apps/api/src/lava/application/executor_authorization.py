@@ -14,7 +14,9 @@ class ExecutorDenied(PermissionError):
     pass
 
 
-def authorize(session: Session, request: ExecutorRequest) -> BuildExecution:
+def authorize(
+    session: Session, request: ExecutorRequest, *, kind: str = "controlled-probe"
+) -> BuildExecution:
     """Consume a nonce and authorize one operation in the same transaction.
 
     The caller performs the external action only after this transaction commits.
@@ -46,6 +48,7 @@ def authorize(session: Session, request: ExecutorRequest) -> BuildExecution:
         if request.operation == "start" and job.cancellation_requested_at is not None:
             raise ExecutorDenied("Cancellation already requested")
         execution = session.get(BuildExecution, request.execution_id)
+        created = False
         if request.operation == "start":
             if execution is None:
                 conflict = session.scalar(
@@ -74,12 +77,12 @@ def authorize(session: Session, request: ExecutorRequest) -> BuildExecution:
                     source_commit_sha=request.source_commit,
                     configuration_revision=request.configuration_revision,
                     fixture=request.fixture,
+                    kind=kind,
                     status="UNKNOWN",
                 )
+                created = True
                 session.add(execution)
                 session.flush()
-            elif execution.status not in {"UNKNOWN", "RUNNING"}:
-                raise ExecutorDenied("Execution is terminal")
         if (
             execution is None
             or execution.job_id != job.id
@@ -87,10 +90,13 @@ def authorize(session: Session, request: ExecutorRequest) -> BuildExecution:
             or execution.claim_generation != job.lease_generation
             or execution.source_commit_sha != request.source_commit
             or execution.configuration_revision != request.configuration_revision
+            or execution.kind != kind
             or execution.fixture != request.fixture
         ):
             raise ExecutorDenied("Execution identity conflict")
-        if request.operation in {"result", "cleanup"} and execution.status == "RUNNING":
+        if request.operation == "cleanup":
+            raise ExecutorDenied("Cleanup is reserved for executor maintenance")
+        if request.operation == "result" and execution.status == "RUNNING":
             raise ExecutorDenied("Execution is still active")
         session.add(
             BuildRequestNonce(
@@ -100,6 +106,7 @@ def authorize(session: Session, request: ExecutorRequest) -> BuildExecution:
             )
         )
         session.commit()
+        execution.newly_authorized = created
         return execution
     except Exception:
         session.rollback()

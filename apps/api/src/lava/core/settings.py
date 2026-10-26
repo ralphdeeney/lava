@@ -36,6 +36,21 @@ class Settings(BaseSettings):
     worker_shutdown_grace_seconds: int = 20
     worker_concurrency: int = 1
     worker_retry_backoff_seconds: float = 1.0
+    worker_executor_mode: Literal["simulated", "controlled-probe"] = "simulated"
+    executor_socket: str = ""
+    executor_key_file: str = ""
+    executor_fixture: Literal["python", "node", "go"] = "python"
+
+    @model_validator(mode="after")
+    def safe_executor(self):
+        if self.worker_executor_mode == "controlled-probe":
+            if self.environment != "test":
+                raise ValueError("Controlled probes require the test environment")
+            if not self.executor_socket.startswith("/") or not self.executor_key_file.startswith(
+                "/"
+            ):
+                raise ValueError("Executor socket and key must be absolute paths")
+        return self
 
     @model_validator(mode="after")
     def safe_worker_timing(self):

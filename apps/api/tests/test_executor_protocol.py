@@ -20,6 +20,8 @@ def request():
         "start",
         "b" * 64,
         1030,
+        lease_owner="test-worker",
+        lease_token="test-lease-token",
     )
 
 

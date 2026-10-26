@@ -461,6 +461,7 @@ class BuildExecution(Base):
     source_commit_sha: Mapped[str] = mapped_column(String(40), nullable=False)
     configuration_revision: Mapped[int] = mapped_column(Integer, nullable=False)
     fixture: Mapped[str] = mapped_column(String(20), nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, server_default="controlled-probe")
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="UNKNOWN")
     image_digest: Mapped[str | None] = mapped_column(String(71))
     created_at: Mapped[datetime] = mapped_column(

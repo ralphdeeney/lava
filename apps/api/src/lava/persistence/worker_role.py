@@ -35,6 +35,7 @@ def main() -> None:
             cursor.execute("GRANT SELECT, UPDATE ON deployments TO lava_worker")
             cursor.execute("GRANT SELECT, INSERT ON deployment_events TO lava_worker")
             cursor.execute("GRANT SELECT, INSERT ON build_artifacts TO lava_worker")
+            cursor.execute("GRANT SELECT ON build_executions TO lava_worker")
             cursor.execute("REVOKE CREATE ON SCHEMA public FROM lava_worker")
 
 
