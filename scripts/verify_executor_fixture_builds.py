@@ -325,7 +325,7 @@ def main():
                 "LAVA_EXECUTOR_FIXTURE": fixture,
             }
             command = worker_command(container_name, image, runtime)
-            if cancel:
+            if fixture == "buildkit-cancel":
                 worker = subprocess.Popen(
                     command,
                     env=worker_env,
@@ -336,7 +336,7 @@ def main():
                 while time.monotonic() < deadline:
                     if worker.poll() is not None:
                         raise RuntimeError(
-                            "Cancellation fixture exited before BuildKit execution"
+                            "Long-running fixture exited before BuildKit execution"
                         )
                     active = subprocess.check_output(["ps", "-eo", "args"], text=True)
                     buildkit = subprocess.run(
@@ -357,15 +357,16 @@ def main():
                     raise RuntimeError(
                         "Timed out waiting for the actual BuildKit solve process"
                     )
-                with Session(engine) as db:
-                    job = db.scalar(
-                        select(DeploymentJob).where(
-                            DeploymentJob.deployment_id == deployment_id
+                if cancel:
+                    with Session(engine) as db:
+                        job = db.scalar(
+                            select(DeploymentJob).where(
+                                DeploymentJob.deployment_id == deployment_id
+                            )
                         )
-                    )
-                    DeploymentWorker(db, "trusted-fixture-worker").cancel(job.id)
+                        DeploymentWorker(db, "trusted-fixture-worker").cancel(job.id)
                 if worker.wait(timeout=60):
-                    raise RuntimeError("Cancellation worker failed")
+                    raise RuntimeError("Long-running fixture worker failed")
             else:
                 subprocess.run(
                     command,
