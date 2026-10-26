@@ -120,3 +120,34 @@ def test_concurrent_duplicate_start_has_one_winner(claimed):
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: attempt(), range(2)))
     assert sorted(results) == ["accepted", "replayed"]
+
+
+def test_expiry_bad_token_and_transaction_rollback(claimed):
+    engine, req = claimed
+    with Session(engine) as db:
+        with pytest.raises(ValueError):
+            authorize(db, replace(req, expires_at=1))
+        with pytest.raises(ExecutorDenied):
+            authorize(db, replace(req, lease_token="wrong"))
+        assert db.get(BuildExecution, req.execution_id) is None
+        assert authorize(db, req).id == req.execution_id
+        with pytest.raises(IntegrityError):
+            authorize(db, req)
+        assert db.get(BuildExecution, req.execution_id) is not None
+
+
+def test_cancelled_job_cannot_start_and_reclaimed_lease_fences_old_request(claimed):
+    engine, req = claimed
+    with Session(engine) as db:
+        job = db.get(DeploymentJob, req.job_id)
+        job.cancellation_requested_at = datetime.now(UTC)
+        db.commit()
+        with pytest.raises(ExecutorDenied):
+            authorize(db, req)
+        job = db.get(DeploymentJob, req.job_id)
+        job.cancellation_requested_at = None
+        job.lease_generation += 1
+        db.commit()
+        with pytest.raises(ExecutorDenied):
+            authorize(db, req)
+        assert db.get(BuildExecution, req.execution_id) is None
