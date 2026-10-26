@@ -145,7 +145,9 @@ def main() -> None:
     builder_info = run(
         ["docker", "buildx", "inspect", "--builder", builder, "--bootstrap"]
     )
-    buildkit_match = re.search(r"BuildKit:\s*(v[0-9]+\.[0-9]+\.[0-9]+)", builder_info)
+    buildkit_match = re.search(
+        r"BuildKit(?: version)?:\s*(v[0-9]+\.[0-9]+\.[0-9]+)", builder_info
+    )
     if buildkit_match is None:
         raise RuntimeError("BuildKit version is unavailable")
     buildkit_version = buildkit_match.group(1)
