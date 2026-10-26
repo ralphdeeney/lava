@@ -56,6 +56,16 @@ def authorize(session: Session, request: ExecutorRequest) -> BuildExecution:
                 )
                 if conflict is not None:
                     raise ExecutorDenied("Claim already has a different execution identity")
+                previous = session.scalar(
+                    select(BuildExecution)
+                    .where(
+                        BuildExecution.job_id == job.id,
+                        BuildExecution.status.in_(["UNKNOWN", "RUNNING"]),
+                    )
+                    .limit(1)
+                )
+                if previous is not None:
+                    raise ExecutorDenied("Previous external execution has uncertain outcome")
                 execution = BuildExecution(
                     id=request.execution_id,
                     job_id=job.id,

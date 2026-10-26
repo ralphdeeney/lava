@@ -3,7 +3,7 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -22,7 +22,6 @@ from lava.db.base import (
     Service,
     User,
 )
-from lava.worker import DeploymentWorker
 
 pytestmark = pytest.mark.integration
 
@@ -67,7 +66,16 @@ def claimed():
         db.flush()
         db.add(DeploymentJob(deployment_id=deployment.id))
         db.commit()
-        job, token = DeploymentWorker(db, "executor-test").claim()
+        import hashlib
+
+        token = "1." + uuid4().hex
+        job = db.scalar(select(DeploymentJob).where(DeploymentJob.deployment_id == deployment.id))
+        job.status = "running"
+        job.lease_owner = "executor-test"
+        job.lease_generation = 1
+        job.lease_token_hash = hashlib.sha256(token.encode()).hexdigest()
+        job.leased_until = datetime.now(UTC) + timedelta(minutes=1)
+        db.commit()
         req = ExecutorRequest(
             str(uuid4()),
             job.id,
@@ -151,3 +159,28 @@ def test_cancelled_job_cannot_start_and_reclaimed_lease_fences_old_request(claim
         with pytest.raises(ExecutorDenied):
             authorize(db, req)
         assert db.get(BuildExecution, req.execution_id) is None
+
+
+def test_unknown_blocks_reclaimed_attempt_and_stale_completion(claimed):
+    from lava.application.executor_recovery import StaleExecution, reconcile
+
+    engine, req = claimed
+    with Session(engine) as db:
+        authorize(db, req)
+        assert reconcile(db, req.execution_id, "UNKNOWN") == "UNKNOWN"
+        job = db.get(DeploymentJob, req.job_id)
+        job.lease_generation += 1
+        db.commit()
+        with pytest.raises(StaleExecution):
+            reconcile(db, req.execution_id, "COMPLETED")
+        newer = replace(
+            req,
+            execution_id=str(uuid4()),
+            claim_generation=req.claim_generation + 1,
+            nonce=uuid4().hex * 2,
+        )
+        job = db.get(DeploymentJob, req.job_id)
+        job.lease_token_hash = __import__("hashlib").sha256(req.lease_token.encode()).hexdigest()
+        db.commit()
+        with pytest.raises(ExecutorDenied, match="uncertain"):
+            authorize(db, newer)
