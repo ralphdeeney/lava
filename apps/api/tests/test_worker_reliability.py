@@ -13,8 +13,10 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
+from lava.application.build_artifacts import record_build_artifact
 from lava.application.deployments import DeploymentService
 from lava.db.base import (
+    BuildArtifact,
     Deployment,
     DeploymentEvent,
     DeploymentJob,
@@ -78,6 +80,7 @@ def worker_database():
         session.commit()
         yield engine, job.id, deployment.id
         session.delete(job)
+        session.query(BuildArtifact).filter_by(deployment_id=deployment.id).delete()
         session.query(DeploymentEvent).filter_by(deployment_id=deployment.id).delete()
         session.delete(deployment)
         session.flush()
@@ -360,3 +363,32 @@ def test_connection_loss_does_not_commit_worker_operation(worker_database, opera
     with Session(engine) as session:
         assert session.get(DeploymentJob, job_id).status == "running"
         assert session.get(Deployment, deployment_id).status == "queued"
+
+
+def test_build_provenance_is_idempotent_and_fenced(worker_database):
+    engine, job_id, deployment_id = worker_database
+    digest = "sha256:" + "a" * 64
+    with Session(engine) as session:
+        _, token = DeploymentWorker(session, "builder-a").claim()
+        arguments = dict(
+            job_id=job_id,
+            lease_owner="builder-a",
+            lease_token=token,
+            image_digest=digest,
+            railpack_version="0.43.0",
+            buildkit_version="v0.24.0",
+        )
+        artifact = record_build_artifact(session, **arguments)
+        assert record_build_artifact(session, **arguments).id == artifact.id
+        deployment = session.get(Deployment, deployment_id)
+        assert artifact.source_commit_sha == deployment.source_commit_sha
+        assert artifact.configuration_revision == deployment.configuration_revision
+        with pytest.raises(ValueError):
+            record_build_artifact(session, **{**arguments, "image_digest": "sha256:" + "b" * 64})
+        with pytest.raises(LeaseLost):
+            record_build_artifact(session, **{**arguments, "lease_owner": "builder-b"})
+    with Session(engine) as session:
+        artifacts = session.scalars(
+            select(BuildArtifact).where(BuildArtifact.deployment_id == deployment_id)
+        ).all()
+        assert len(artifacts) == 1

@@ -386,6 +386,28 @@ class DeploymentJob(Base):
     )
 
 
+class BuildArtifact(Base):
+    __tablename__ = "build_artifacts"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    deployment_id: Mapped[str] = mapped_column(
+        ForeignKey("deployments.id", ondelete="RESTRICT"), nullable=False
+    )
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_commit_sha: Mapped[str] = mapped_column(String(64), nullable=False)
+    configuration_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    railpack_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    buildkit_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    image_digest: Mapped[str] = mapped_column(String(71), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "attempt", name="uq_build_artifact_attempt"),
+        CheckConstraint("attempt >= 1", name="ck_build_artifact_attempt"),
+        CheckConstraint("image_digest ~ '^sha256:[0-9a-f]{64}$'", name="ck_build_artifact_digest"),
+    )
+
+
 class PasswordAccount(Base):
     __tablename__ = "password_accounts"
     user_id: Mapped[str] = mapped_column(
