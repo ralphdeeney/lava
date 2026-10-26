@@ -26,6 +26,8 @@ class ExecutorRequest:
     nonce: str
     expires_at: int
     version: int = 1
+    lease_owner: str = ""
+    lease_token: str = ""
 
     def validate(self, now: float) -> None:
         if self.version != 1:

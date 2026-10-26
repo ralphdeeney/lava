@@ -446,3 +446,42 @@ class LoginAttempt(Base):
     )
     attempts: Mapped[int] = mapped_column(Integer, nullable=False)
     __table_args__ = (CheckConstraint("attempts > 0", name="ck_login_attempts_positive"),)
+
+
+class BuildExecution(Base):
+    __tablename__ = "build_executions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("deployment_jobs.id", ondelete="RESTRICT"), nullable=False
+    )
+    deployment_id: Mapped[str] = mapped_column(
+        ForeignKey("deployments.id", ondelete="RESTRICT"), nullable=False
+    )
+    claim_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_commit_sha: Mapped[str] = mapped_column(String(40), nullable=False)
+    configuration_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    fixture: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="UNKNOWN")
+    image_digest: Mapped[str | None] = mapped_column(String(71))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    __table_args__ = (
+        UniqueConstraint("job_id", "claim_generation", name="uq_build_execution_claim"),
+        CheckConstraint(
+            "status IN ('UNKNOWN','RUNNING','COMPLETED','CANCELLED','FAILED')",
+            name="ck_build_execution_status",
+        ),
+    )
+
+
+class BuildRequestNonce(Base):
+    __tablename__ = "build_request_nonces"
+    nonce_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    execution_id: Mapped[str] = mapped_column(
+        ForeignKey("build_executions.id", ondelete="RESTRICT"), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
