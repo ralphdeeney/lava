@@ -14,6 +14,30 @@ import time
 from pathlib import Path
 
 
+def stop_owned_buildkit() -> bool:
+    """Stop this disposable executor's sole builder before declaring termination."""
+    try:
+        stopped = subprocess.run(
+            ["docker", "buildx", "stop", "lava-fixtures"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=20,
+            check=False,
+        )
+        if stopped.returncode:
+            return False
+        active = subprocess.run(
+            ["docker", "ps", "-q", "--filter", "name=^/buildx_buildkit_lava-fixtures0$"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            check=False,
+        )
+        return active.returncode == 0 and not active.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def write_receipt(directory: Path, status: str, spec: dict) -> None:
     temporary = directory / "result.tmp"
     with temporary.open("x") as stream:
@@ -71,6 +95,7 @@ def main() -> None:
                         "GITHUB_REF",
                         "GITHUB_REPOSITORY",
                         "GITHUB_SHA",
+                        "LAVA_PROMOTED_SOURCE_SHA",
                         "HOME",
                         "DOCKER_HOST",
                         "DOCKER_CONFIG",
@@ -108,8 +133,10 @@ def main() -> None:
             pass
         process.wait(timeout=2)
         if spec.get("kind") == "fixture-build" and status != "COMPLETED":
-            # Killing the client cannot prove daemon-side build termination.
-            status = "UNKNOWN"
+            # The Docker client exit alone does not terminate daemon-side work.
+            # This builder is created solely for this disposable verifier.
+            if not stop_owned_buildkit():
+                status = "UNKNOWN"
         write_receipt(directory, status, spec)
 
 

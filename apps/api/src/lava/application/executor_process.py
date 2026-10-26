@@ -78,6 +78,7 @@ class ProcessSupervisor:
                                 "GITHUB_REF",
                                 "GITHUB_REPOSITORY",
                                 "GITHUB_SHA",
+                                "LAVA_PROMOTED_SOURCE_SHA",
                                 "HOME",
                                 "DOCKER_HOST",
                                 "DOCKER_CONFIG",

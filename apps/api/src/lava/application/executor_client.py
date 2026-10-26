@@ -67,9 +67,13 @@ class SocketExecutor:
         try:
             result = self.send("start")
             deadline = time.monotonic() + (1530 if self.mode == "fixture-build" else 30)
+            cancel_sent = False
+            unknown_since = None
             while time.monotonic() < deadline:
-                if cancelled():
+                if cancelled() and not cancel_sent:
                     result = self.send("cancel")
+                    cancel_sent = True
+                    deadline = min(deadline, time.monotonic() + 30)
                 state = result.get("status")
                 if state == "COMPLETED":
                     if self.mode == "fixture-build":
@@ -90,7 +94,11 @@ class SocketExecutor:
                 if state == "FAILED":
                     return "failure"
                 if state == "UNKNOWN":
-                    raise ExecutionUncertain("External execution outcome is unknown")
+                    unknown_since = unknown_since or time.monotonic()
+                    if time.monotonic() - unknown_since >= 30:
+                        raise ExecutionUncertain("External execution outcome is unknown")
+                else:
+                    unknown_since = None
                 time.sleep(0.1)
                 result = self.send("status")
             raise ExecutionUncertain("Executor observation deadline exceeded")

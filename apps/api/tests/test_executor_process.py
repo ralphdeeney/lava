@@ -99,3 +99,58 @@ def test_receipt_survives_supervisor_restart_and_is_not_executed_twice(tmp_path)
     with pytest.raises(ValueError):
         restarted.start(identity, ["sleep", "0.1"], timeout=3)
     supervisor.shutdown()
+
+
+def test_fixture_child_receives_only_explicit_promotion_identity(tmp_path, monkeypatch):
+    import sys
+
+    promoted = "a" * 40
+    monkeypatch.setenv("LAVA_PROMOTED_SOURCE_SHA", promoted)
+    monkeypatch.setenv("GITHUB_SHA", "b" * 40)
+    monkeypatch.setenv("LAVA_DATABASE_URL", "must-not-reach-build")
+    supervisor = ProcessSupervisor(tmp_path / "spool")
+    identity = str(uuid4())
+    artifact = supervisor.root / identity / "artifact.json"
+    script = (
+        "import json,os,sys; from pathlib import Path; "
+        "Path(sys.argv[1]).write_text(json.dumps({"
+        "'promotion':os.environ.get('LAVA_PROMOTED_SOURCE_SHA'),"
+        "'database':os.environ.get('LAVA_DATABASE_URL')}))"
+    )
+    supervisor.start(
+        identity, [sys.executable, "-c", script, str(artifact)], timeout=5, kind="fixture-build"
+    )
+    deadline = time.monotonic() + 5
+    while supervisor.status(identity) == "RUNNING" and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert supervisor.status(identity) == "COMPLETED"
+    result = supervisor.result(identity)["artifact"]
+    assert result == {"promotion": promoted, "database": None}
+
+
+def test_builder_shutdown_requires_observed_owned_container_exit(monkeypatch):
+    import subprocess
+
+    from lava.application.executor_child import stop_owned_buildkit
+
+    commands = []
+
+    def completed(argv, **_):
+        commands.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout=b"" if len(commands) == 2 else None)
+
+    monkeypatch.setattr("lava.application.executor_child.subprocess.run", completed)
+    assert stop_owned_buildkit()
+    assert commands == [
+        ["docker", "buildx", "stop", "lava-fixtures"],
+        ["docker", "ps", "-q", "--filter", "name=^/buildx_buildkit_lava-fixtures0$"],
+    ]
+    commands.clear()
+
+    def still_running(argv, **_):
+        commands.append(argv)
+        output = b"container" if len(commands) == 2 else None
+        return subprocess.CompletedProcess(argv, 0, stdout=output)
+
+    monkeypatch.setattr("lava.application.executor_child.subprocess.run", still_running)
+    assert not stop_owned_buildkit()

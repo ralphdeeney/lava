@@ -130,6 +130,8 @@ class ExecutorService:
             self.scan_one(execution_id)
 
     def handle(self, request: ExecutorRequest) -> dict:
+        if self.kind == "controlled-probe" and request.fixture not in PLANS:
+            raise PermissionError("Fixture requires the trusted build executor")
         # Only one external process at a time on this lightweight executor.
         if request.operation == "start":
             with Session(self.engine) as capacity:
@@ -173,7 +175,14 @@ class ExecutorService:
                     self.supervisor.start(
                         request.execution_id,
                         argv,
-                        timeout=1500 if self.kind == "fixture-build" else 10,
+                        timeout=(
+                            15
+                            if self.kind == "fixture-build"
+                            and request.fixture in {"buildkit-cancel", "buildkit-fail"}
+                            else 1500
+                            if self.kind == "fixture-build"
+                            else 10
+                        ),
                         kind=self.kind,
                     )
                     reconcile(session, request.execution_id, "RUNNING")
@@ -191,7 +200,14 @@ class ExecutorService:
                 job.cancellation_requested_at = datetime.now(UTC)
                 session.commit()
         status = self.scan_one(request.execution_id)
-        return {"execution_id": request.execution_id, "status": status, "mode": "controlled-probe"}
+        response = {"execution_id": request.execution_id, "status": status, "mode": self.kind}
+        if status == "COMPLETED" and self.kind == "fixture-build":
+            with Session(self.engine) as session:
+                execution = session.get(BuildExecution, request.execution_id)
+                if execution is None or not execution.image_digest:
+                    raise RuntimeError("Completed build has no verified digest")
+                response["image_digest"] = execution.image_digest
+        return response
 
     def shutdown(self):
         self.supervisor.shutdown()
@@ -301,7 +317,10 @@ def main():
 
         if args.source_root is None:
             raise RuntimeError("Fixture builds require an audited checkout")
-        validate_trusted_source(args.source_root, os.environ.get("GITHUB_SHA", ""), "python")
+        source_commit = os.environ.get("LAVA_PROMOTED_SOURCE_SHA") or os.environ.get(
+            "GITHUB_SHA", ""
+        )
+        validate_trusted_source(args.source_root, source_commit, "python")
     if args.mode == "controlled-probe" and os.environ.get("LAVA_ENVIRONMENT") != "test":
         raise RuntimeError("Controlled executor probes require the test environment")
     engine = create_engine(

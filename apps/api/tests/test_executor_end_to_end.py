@@ -9,15 +9,17 @@ import threading
 import time
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from test_executor_authorization import claimed  # noqa: F401, F811
 
+from lava.application.executor_authorization import authorize
 from lava.application.executor_client import SocketExecutor
 from lava.db.base import BuildExecution, Deployment, DeploymentEvent, DeploymentJob
-from lava.executor import exchange, load_key, provision_key
+from lava.executor import ExecutorService, exchange, load_key, provision_key
 from lava.worker import DeploymentWorker
 
 pytestmark = pytest.mark.integration
@@ -115,6 +117,25 @@ def send(daemon, operation, req=None):
         expires_at=int(time.time()) + 30,
     )
     return exchange(root / "sock", key, value)
+
+
+def test_completed_fixture_reply_has_verified_digest(claimed, tmp_path, monkeypatch):  # noqa: F811
+    engine, request = claimed
+    digest = "sha256:" + "a" * 64
+    with Session(engine) as db:
+        execution = authorize(db, request, kind="fixture-build")
+        execution.status = "COMPLETED"
+        execution.image_digest = digest
+        db.commit()
+    service = ExecutorService(engine, tmp_path / "spool", kind="fixture-build")
+    monkeypatch.setattr(service, "scan_one", lambda _: "COMPLETED")
+    response = service.handle(replace(request, operation="result", nonce=uuid4().hex * 2))
+    assert response == {
+        "execution_id": request.execution_id,
+        "status": "COMPLETED",
+        "mode": "fixture-build",
+        "image_digest": digest,
+    }
 
 
 def test_real_daemon_start_result_and_duplicate_submission(daemon):

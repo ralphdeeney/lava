@@ -8,13 +8,13 @@ of the private executor transport. No API or infrastructure credentials enter it
 import contextlib
 import json
 import os
-from pathlib import Path
 import secrets
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 from uuid import uuid4
 
 import psycopg
@@ -23,9 +23,16 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
-from lava.builds.fixture_toolchain import FIXTURES, run, validate_trusted_source
+from lava.builds.fixture_toolchain import (
+    BUILDER_NAME,
+    BUILDKIT_IMAGE,
+    FIXTURES,
+    run,
+    validate_trusted_source,
+)
 from lava.db.base import (
     BuildArtifact,
+    BuildExecution,
     Deployment,
     DeploymentEvent,
     DeploymentJob,
@@ -36,6 +43,7 @@ from lava.db.base import (
 )
 from lava.executor import provision_key
 from lava.persistence.executor_role import provision
+from lava.worker import DeploymentWorker
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKER = """
@@ -53,10 +61,48 @@ try:
     with Session(e) as db:
         assert DeploymentWorker(db, 'trusted-fixture-worker').process_once(
             executor_factory=lambda job, deployment, token: SocketExecutor(
-                Path('/runtime/sock'), key, job, deployment, token, s.executor_fixture, mode='fixture-build'))
+                Path('/runtime/sock'), key, job, deployment, token,
+                s.executor_fixture, mode='fixture-build'))
 finally:
     e.dispose()
 """
+
+
+def worker_command(name: str, image: str, runtime: Path) -> list[str]:
+    return [
+        "docker",
+        "run",
+        "--rm",
+        "--name",
+        name,
+        "--network",
+        "host",
+        "--user",
+        str(os.getuid()),
+        "--read-only",
+        "--tmpfs",
+        "/tmp:rw,size=64m",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--memory",
+        "512m",
+        "--cpus",
+        "1",
+        "--pids-limit",
+        "64",
+        "--mount",
+        f"type=bind,src={runtime},dst=/runtime,readonly",
+        "-e",
+        "LAVA_DATABASE_URL",
+        "-e",
+        "LAVA_EXECUTOR_FIXTURE",
+        image,
+        "python",
+        "-c",
+        WORKER,
+    ]
 
 
 def seed(engine, fixture, commit):
@@ -128,6 +174,7 @@ def main():
     evidence = []
     process = None
     runtime = None
+    builder_created = False
     containers = []
     with psycopg.connect(admin) as connection:
         provision(connection, executor_password, executor_role)
@@ -155,6 +202,27 @@ def main():
                 str(ROOT),
             ]
         )
+        run(
+            [
+                "docker",
+                "buildx",
+                "create",
+                "--name",
+                BUILDER_NAME,
+                "--driver",
+                "docker-container",
+                "--driver-opt",
+                f"image={BUILDKIT_IMAGE}",
+                "--driver-opt",
+                "memory=3g",
+                "--driver-opt",
+                "cpu-quota=200000",
+                "--driver-opt",
+                "cpu-period=100000",
+            ],
+            timeout=120,
+        )
+        builder_created = True
         runtime = Path(tempfile.mkdtemp(prefix="lava-build-executor-"))
         provision_key(runtime / "key")
         executor_url = url.set(
@@ -206,40 +274,7 @@ def main():
             }
             # Command text is fixed trusted harness code, never PR input.
             subprocess.run(
-                [
-                    "docker",
-                    "run",
-                    "--rm",
-                    "--name",
-                    container_name,
-                    "--network",
-                    "host",
-                    "--user",
-                    str(os.getuid()),
-                    "--read-only",
-                    "--tmpfs",
-                    "/tmp:rw,size=64m",
-                    "--cap-drop",
-                    "ALL",
-                    "--security-opt",
-                    "no-new-privileges",
-                    "--memory",
-                    "512m",
-                    "--cpus",
-                    "1",
-                    "--pids-limit",
-                    "64",
-                    "--mount",
-                    f"type=bind,src={runtime},dst=/runtime,readonly",
-                    "-e",
-                    "LAVA_DATABASE_URL",
-                    "-e",
-                    "LAVA_EXECUTOR_FIXTURE",
-                    image,
-                    "python",
-                    "-c",
-                    WORKER,
-                ],
+                worker_command(container_name, image, runtime),
                 env=worker_env,
                 check=True,
                 timeout=1560,
@@ -272,6 +307,124 @@ def main():
                     f"::notice::fixture={fixture} commit={commit} digest={artifact.image_digest}",
                     flush=True,
                 )
+        cases = (
+            ("buildkit-fail", False),
+            ("buildkit-cancel", True),
+            ("buildkit-cancel", False),
+        )
+        for fixture, cancel in cases:
+            container_name = "lava-fixture-worker-" + uuid4().hex[:12]
+            containers.append(container_name)
+            deployment_id = seed(engine, fixture, commit)
+            worker_url = url.set(
+                username=worker_role, password=worker_password
+            ).render_as_string(hide_password=False)
+            worker_env = {
+                **os.environ,
+                "LAVA_DATABASE_URL": worker_url,
+                "LAVA_EXECUTOR_FIXTURE": fixture,
+            }
+            command = worker_command(container_name, image, runtime)
+            if cancel:
+                worker = subprocess.Popen(
+                    command,
+                    env=worker_env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                deadline = time.monotonic() + 90
+                while time.monotonic() < deadline:
+                    if worker.poll() is not None:
+                        raise RuntimeError(
+                            "Cancellation fixture exited before BuildKit execution"
+                        )
+                    active = subprocess.check_output(["ps", "-eo", "args"], text=True)
+                    if (
+                        "docker buildx build" in active
+                        and "build-fixtures/buildkit-cancel" in active
+                    ):
+                        break
+                    time.sleep(0.2)
+                else:
+                    raise RuntimeError("Timed out waiting for actual BuildKit process")
+                with Session(engine) as db:
+                    job = db.scalar(
+                        select(DeploymentJob).where(
+                            DeploymentJob.deployment_id == deployment_id
+                        )
+                    )
+                    DeploymentWorker(db, "trusted-fixture-worker").cancel(job.id)
+                if worker.wait(timeout=60):
+                    raise RuntimeError("Cancellation worker failed")
+            else:
+                subprocess.run(
+                    command,
+                    env=worker_env,
+                    check=True,
+                    timeout=90,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            with Session(engine) as db:
+                job = db.scalar(
+                    select(DeploymentJob).where(
+                        DeploymentJob.deployment_id == deployment_id
+                    )
+                )
+                execution = db.scalar(
+                    select(BuildExecution).where(BuildExecution.job_id == job.id)
+                )
+                deployment = db.get(Deployment, deployment_id)
+                expected = "cancelled" if cancel else "failed"
+                if (
+                    job.status != expected
+                    or deployment.status != expected
+                    or execution.status != expected.upper()
+                    or execution.image_digest is not None
+                    or db.scalar(
+                        select(BuildArtifact).where(
+                            BuildArtifact.deployment_id == deployment_id
+                        )
+                    )
+                    is not None
+                ):
+                    raise RuntimeError(
+                        "BuildKit terminal state or cleanup was inconsistent"
+                    )
+            active_builder = subprocess.run(
+                [
+                    "docker",
+                    "ps",
+                    "-q",
+                    "--filter",
+                    "name=^/buildx_buildkit_lava-fixtures0$",
+                ],
+                capture_output=True,
+                timeout=5,
+                check=True,
+            )
+            if active_builder.stdout.strip():
+                raise RuntimeError(
+                    "Cancelled or failed BuildKit builder remained active"
+                )
+            outcome = (
+                "cancelled"
+                if cancel
+                else ("failed" if fixture == "buildkit-fail" else "timed_out")
+            )
+            evidence.append(
+                {
+                    "fixture": fixture,
+                    "source_commit": commit,
+                    "status": outcome,
+                    "boundary": "authenticated-unix-socket-isolated-worker",
+                    "builder_stopped": True,
+                }
+            )
+            print(
+                f"::notice::fixture={fixture} status={evidence[-1]['status']}",
+                flush=True,
+            )
         process.terminate()
         process.wait(timeout=10)
     finally:
@@ -293,6 +446,14 @@ def main():
         if runtime is not None:
             shutil.rmtree(runtime)
         engine.dispose()
+        if builder_created:
+            subprocess.run(
+                ["docker", "buildx", "rm", BUILDER_NAME],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=60,
+                check=False,
+            )
         subprocess.run(
             ["docker", "image", "rm", image],
             stdout=subprocess.DEVNULL,

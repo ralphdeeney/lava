@@ -18,9 +18,16 @@ FRONTEND = (
     "sha256:355ef61fae6f2551103cd8b10c710cb07167dd353d561f15c69b8d7ac1c676cc"
 )
 FIXTURES = {"python": ["--start-cmd", "python main.py"], "node": [], "go": []}
+BUILDKIT_TEST_FIXTURES = {"buildkit-cancel", "buildkit-fail"}
 BUILDKIT_VERSION = "v0.34.0"
+BUILDKIT_IMAGE = (
+    "moby/buildkit:v0.34.0@sha256:b059f8d7226d0b326bc871af489a5dddf65e36af4d20d14251b072974d9ee87c"
+)
+BUILDER_NAME = "lava-fixtures"
 # Hashes of audited fixture trees, including relative names and file contents.
 FIXTURE_SHA256 = {
+    "buildkit-cancel": "3ff3ac56c7b1ba2300319ef5482df57d72372f90d1cd06f6ba6402d8ca575ea0",
+    "buildkit-fail": "6769e857f96e7b24b0f57e5c43933ce8a18610c4d1777dd91df0694a80331ba6",
     "go": "9a5758a9e2c9899fda48295b50782d10d75f31d49f00fa5586e934c85c65d1a0",
     "node": "6418b33a80ec49a53c2c93d3ca7d342a9396f61918d01fc591818ac2fb1cdd56",
     "python": "f51db1d534fb49dccd7457a1e16068849ee1ed1f5b65a4bd5affc8b7bcdc9171",
@@ -98,7 +105,7 @@ def validate_trusted_source(root: Path, source_commit: str, fixture: str) -> Pat
     actual = subprocess.check_output(
         ["git", "-C", str(root), "rev-parse", "HEAD"], text=True
     ).strip()
-    if actual != source_commit or fixture not in FIXTURES:
+    if actual != source_commit or fixture not in FIXTURE_SHA256:
         raise ValueError("Unapproved fixture source identity")
     context = root / "build-fixtures" / fixture
     if (
@@ -122,33 +129,34 @@ def build_fixture(root: Path, source_commit: str, fixture: str, output: Path) ->
     import tarfile
 
     context = validate_trusted_source(root, source_commit, fixture)
-    builder = run(["docker", "context", "show"]).strip()
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", builder):
-        raise ValueError("Invalid builder identity")
+    builder = BUILDER_NAME
     info = run(["docker", "buildx", "inspect", "--builder", builder, "--bootstrap"])
     version = re.search(r"BuildKit(?: version)?:\s*(v[0-9]+\.[0-9]+\.[0-9]+)", info)
     if version is None or version.group(1) != BUILDKIT_VERSION:
         raise ValueError("Unapproved BuildKit version")
     with tempfile.TemporaryDirectory(prefix="lava-build-", dir=output.parent) as scratch:
         directory = Path(scratch)
-        railpack = install_railpack(directory)
         plan, detection = directory / "plan.json", directory / "info.json"
-        run(
-            [
-                str(railpack),
-                "prepare",
-                str(context),
-                "--plan-out",
-                str(plan),
-                "--info-out",
-                str(detection),
-                "--hide-pretty-plan",
-                *FIXTURES[fixture],
-            ],
-            timeout=300,
-        )
-        if not json.loads(detection.read_text()).get("success"):
-            raise ValueError("Railpack fixture detection failed")
+        if fixture in BUILDKIT_TEST_FIXTURES:
+            plan = context / "Dockerfile"
+        else:
+            railpack = install_railpack(directory)
+            run(
+                [
+                    str(railpack),
+                    "prepare",
+                    str(context),
+                    "--plan-out",
+                    str(plan),
+                    "--info-out",
+                    str(detection),
+                    "--hide-pretty-plan",
+                    *FIXTURES[fixture],
+                ],
+                timeout=300,
+            )
+            if not json.loads(detection.read_text()).get("success"):
+                raise ValueError("Railpack fixture detection failed")
         metadata, archive = directory / "metadata.json", directory / "image.tar"
         run(
             [

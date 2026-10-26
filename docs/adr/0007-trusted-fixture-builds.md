@@ -119,15 +119,19 @@ The verifier's `--executor-probes` option creates an owned disposable stack and
 checks an actual worker/daemon/process/database round trip. Its 4 GiB preflight
 is unchanged. Fixed sleep probes are simulations and create no OCI artifacts.
 
-The fixture-build daemon mode is restricted to protected-main disposable GitHub
-push runs. It verifies source/fixture/toolchain identity, runs approved argument
+The fixture-build daemon mode is restricted to protected-main push runs or a
+protected workflow that pins and promotes one reviewed candidate SHA. It
+verifies source/fixture/toolchain identity, runs approved argument
 arrays, exports OCI archives and verifies manifest/blob hashes. The trusted
 harness runs the worker in a non-root read-only container with no Docker socket;
 only the separate host executor has Docker authority. Checkout credentials are
-not persisted. BuildKit client cancellation cannot by itself prove that all
-Docker-daemon work stopped: such outcomes remain UNKNOWN and are not retried.
-The entire disposable runner is the final external cleanup boundary. This is a
-remaining real-build cancellation acceptance gate, not proof of termination.
+not persisted. The build executor uses a version-pinned, named BuildKit builder
+owned only by the disposable verifier. After terminating the client process, it
+stops that builder and verifies the builder container is no longer running.
+If this cannot be established, the external outcome remains UNKNOWN and is not
+retried. The entire disposable runner is the final external cleanup boundary.
+The approved cancellation and failure fixtures exercise this path; their real
+BuildKit results must be observed before the release gate can pass.
 Current PR-head image builds are still unavailable under this policy, so PR #9
 must remain draft until an approved trusted verification path supplies that
 evidence. Neither an earlier commit's images nor controlled probes satisfy it.

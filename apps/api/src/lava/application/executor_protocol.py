@@ -68,7 +68,7 @@ class ExecutorRequest:
                 raise ValueError("Invalid identity")
         if self.operation not in {"start", "status", "cancel", "result", "cleanup"}:
             raise ValueError("Invalid operation")
-        if self.fixture not in {"python", "node", "go"}:
+        if self.fixture not in {"python", "node", "go", "buildkit-cancel", "buildkit-fail"}:
             raise ValueError("Unapproved fixture")
         if not re.fullmatch(r"[0-9a-f]{40}", self.source_commit):
             raise ValueError("Invalid source")
