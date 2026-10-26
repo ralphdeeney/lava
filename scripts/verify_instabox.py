@@ -115,6 +115,11 @@ def main() -> int:
     )
     parser.add_argument("--preflight-only", action="store_true")
     parser.add_argument(
+        "--executor-probes",
+        action="store_true",
+        help="Add the controlled executor test overlay (no builds)",
+    )
+    parser.add_argument(
         "--project", help="Owned disposable project identifier for CI recovery"
     )
     args = parser.parse_args()
@@ -240,10 +245,13 @@ def main() -> int:
     worker_password = secrets.token_hex(24)
     credentials.append(password)
     credentials.append(worker_password)
+    executor_password = secrets.token_hex(24)
+    credentials.append(executor_password)
     envfile = run_dir / "compose.env"
     envfile.write_text(
         f"POSTGRES_USER=lava\nPOSTGRES_DB=lava_verification_test\n"
         f"POSTGRES_PASSWORD={password}\nPOSTGRES_WORKER_PASSWORD={worker_password}\n"
+        f"POSTGRES_EXECUTOR_PASSWORD={executor_password}\n"
         "LAVA_ENVIRONMENT=test\n"
     )
     override = run_dir / "ports.yaml"
@@ -261,6 +269,8 @@ def main() -> int:
         "-f",
         str(ROOT / "compose.yaml"),
     ]
+    if args.executor_probes:
+        compose += ["-f", str(ROOT / "compose.executor-probes.yaml")]
     if args.cloud:
         compose += ["-f", str(ROOT / "compose.cloud.yaml")]
     compose += ["-f", str(override)]
@@ -346,6 +356,27 @@ def main() -> int:
         print(
             "PASS: Compose startup, HTTP, PostgreSQL, repeat migrations, schema and non-root checks"
         )
+        if args.executor_probes:
+            for service in ("worker", "executor"):
+                uid = command(
+                    compose + ["exec", "-T", service, "id", "-u"]
+                ).stdout.strip()
+                if uid == "0":
+                    raise RuntimeError("Executor test service runs as root")
+            command(
+                compose
+                + [
+                    "exec",
+                    "-T",
+                    "-e",
+                    "LAVA_DISPOSABLE_EXECUTOR_PROBE=1",
+                    "api",
+                    "python",
+                    "-m",
+                    "lava.executor_probe",
+                ],
+                timeout=40,
+            )
         status = 0
     except (RuntimeError, subprocess.TimeoutExpired, OSError, ValueError) as exc:
         print(redact(str(exc), credentials), file=sys.stderr)

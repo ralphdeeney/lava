@@ -474,6 +474,9 @@ class BuildExecution(Base):
         UniqueConstraint("job_id", "claim_generation", name="uq_build_execution_claim"),
         Index("ix_build_executions_job", "job_id"),
         CheckConstraint(
+            "kind IN ('controlled-probe','fixture-build')", name="ck_build_execution_kind"
+        ),
+        CheckConstraint(
             "status IN ('UNKNOWN','RUNNING','COMPLETED','CANCELLED','FAILED')",
             name="ck_build_execution_status",
         ),

@@ -14,10 +14,17 @@ import time
 from pathlib import Path
 
 
-def write_receipt(directory: Path, status: str) -> None:
+def write_receipt(directory: Path, status: str, spec: dict) -> None:
     temporary = directory / "result.tmp"
     with temporary.open("x") as stream:
-        json.dump({"status": status}, stream)
+        receipt = {
+            "status": status,
+            "execution_id": directory.name,
+            "receipt_nonce": spec["receipt_nonce"],
+        }
+        if status == "COMPLETED" and spec.get("kind") == "fixture-build":
+            receipt["artifact"] = json.loads((directory / "artifact.json").read_text())
+        json.dump(receipt, stream)
         stream.flush()
         os.fsync(stream.fileno())
     temporary.replace(directory / "result.json")
@@ -32,7 +39,8 @@ def main() -> None:
     directory = Path(sys.argv[1])
     spec = json.loads((directory / "spec.json").read_text())
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (8 * 1024**2, 8 * 1024**2))
+    resource.setrlimit(resource.RLIMIT_FSIZE, (512 * 1024**2, 512 * 1024**2))
+    resource.setrlimit(resource.RLIMIT_CPU, (3600, 3600))
     stop = False
 
     def cancel(*_):
@@ -47,7 +55,32 @@ def main() -> None:
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        env={"PATH": os.defpath, "LANG": "C.UTF-8"},
+        env={
+            "PATH": os.defpath,
+            "LANG": "C.UTF-8",
+            **(
+                {
+                    name: os.environ[name]
+                    for name in (
+                        "PATH",
+                        "HTTPS_PROXY",
+                        "HTTP_PROXY",
+                        "SSL_CERT_FILE",
+                        "GITHUB_ACTIONS",
+                        "GITHUB_EVENT_NAME",
+                        "GITHUB_REF",
+                        "GITHUB_REPOSITORY",
+                        "GITHUB_SHA",
+                        "HOME",
+                        "DOCKER_HOST",
+                        "DOCKER_CONFIG",
+                    )
+                    if name in os.environ
+                }
+                if spec.get("kind") == "fixture-build"
+                else {}
+            ),
+        },
         close_fds=True,
     )
     deadline = time.monotonic() + spec["timeout"]
@@ -74,7 +107,10 @@ def main() -> None:
         except ProcessLookupError:
             pass
         process.wait(timeout=2)
-        write_receipt(directory, status)
+        if spec.get("kind") == "fixture-build" and status != "COMPLETED":
+            # Killing the client cannot prove daemon-side build termination.
+            status = "UNKNOWN"
+        write_receipt(directory, status, spec)
 
 
 if __name__ == "__main__":

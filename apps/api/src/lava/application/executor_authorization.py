@@ -4,6 +4,7 @@ import hashlib
 from datetime import UTC, datetime
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from lava.application.executor_protocol import ExecutorRequest
@@ -23,6 +24,8 @@ def authorize(
     """
     try:
         request.validate(datetime.now(UTC).timestamp())
+        if kind not in {"controlled-probe", "fixture-build"}:
+            raise ExecutorDenied("Invalid executor mode")
         job = session.scalar(
             select(DeploymentJob).where(DeploymentJob.id == request.job_id).with_for_update()
         )
@@ -45,6 +48,11 @@ def authorize(
             or deployment.configuration_revision != request.configuration_revision
         ):
             raise ExecutorDenied("Source identity mismatch")
+        if kind == "fixture-build" and (
+            deployment.source_type != "git"
+            or deployment.repository_url != "https://github.com/ralphdeeney/lava"
+        ):
+            raise ExecutorDenied("Unapproved fixture repository")
         if request.operation == "start" and job.cancellation_requested_at is not None:
             raise ExecutorDenied("Cancellation already requested")
         execution = session.get(BuildExecution, request.execution_id)
@@ -69,6 +77,19 @@ def authorize(
                 )
                 if previous is not None:
                     raise ExecutorDenied("Previous external execution has uncertain outcome")
+                completed = session.scalar(
+                    select(BuildExecution)
+                    .where(
+                        BuildExecution.job_id == job.id,
+                        BuildExecution.status == "COMPLETED",
+                        BuildExecution.source_commit_sha == request.source_commit,
+                        BuildExecution.configuration_revision == request.configuration_revision,
+                        BuildExecution.fixture == request.fixture,
+                        BuildExecution.kind == kind,
+                    )
+                    .order_by(BuildExecution.created_at.desc())
+                    .limit(1)
+                )
                 execution = BuildExecution(
                     id=request.execution_id,
                     job_id=job.id,
@@ -78,7 +99,8 @@ def authorize(
                     configuration_revision=request.configuration_revision,
                     fixture=request.fixture,
                     kind=kind,
-                    status="UNKNOWN",
+                    status="COMPLETED" if completed is not None else "UNKNOWN",
+                    image_digest=completed.image_digest if completed is not None else None,
                 )
                 created = True
                 session.add(execution)
@@ -108,6 +130,9 @@ def authorize(
         session.commit()
         execution.newly_authorized = created
         return execution
+    except IntegrityError:
+        session.rollback()
+        raise ExecutorDenied("Executor request replay or identity conflict") from None
     except Exception:
         session.rollback()
         raise

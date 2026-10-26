@@ -22,6 +22,7 @@ def record_build_artifact(
     image_digest: str,
     railpack_version: str,
     buildkit_version: str,
+    commit: bool = True,
 ) -> BuildArtifact:
     if not DIGEST.fullmatch(image_digest):
         raise ValueError("Invalid OCI image digest")
@@ -52,7 +53,8 @@ def record_build_artifact(
         if existing is not None:
             if existing.image_digest != image_digest:
                 raise ValueError("Build attempt already recorded with a different digest")
-            session.commit()
+            if commit:
+                session.commit()
             return existing
         artifact = BuildArtifact(
             deployment_id=deployment.id,
@@ -64,7 +66,9 @@ def record_build_artifact(
             image_digest=image_digest,
         )
         session.add(artifact)
-        session.commit()
+        session.flush()
+        if commit:
+            session.commit()
         return artifact
     except Exception:
         session.rollback()

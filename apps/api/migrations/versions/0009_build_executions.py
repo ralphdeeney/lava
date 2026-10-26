@@ -32,6 +32,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["deployment_id"], ["deployments.id"], ondelete="RESTRICT"),
         sa.UniqueConstraint("job_id", "claim_generation", name="uq_build_execution_claim"),
         sa.CheckConstraint(
+            "kind IN ('controlled-probe','fixture-build')", name="ck_build_execution_kind"
+        ),
+        sa.CheckConstraint(
             "status IN ('UNKNOWN','RUNNING','COMPLETED','CANCELLED','FAILED')",
             name="ck_build_execution_status",
         ),

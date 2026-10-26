@@ -35,15 +35,11 @@ isolation mechanism or a protected promotion step before Docker-capable
 execution. This boundary has not yet been implemented; PR #9 must remain
 draft. A green `checks` result does not attest to real candidate builds.
 
-The simulated deployment worker has no Docker socket and no authenticated
-executor transport. Build results are currently recorded only by the trusted
-fixture verifier in disposable CI PostgreSQL. The job lease fences database
-publication, but does not cancel a BuildKit process or prove that abandoned
-external work stopped. A future executor needs scoped request authentication,
-an immutable source/configuration allowlist, durable request nonces, lease-
-generation fencing at submission, process-group or BuildKit cancellation,
-timeout, and an `unknown` reconciliation state when executor contact is lost.
-It must never interpret an uncertain outcome as a safely terminated build.
+The worker has no Docker socket. The integrated executor described below adds
+authenticated transport, durable replay protection and controlled-process
+recovery. Database publication is fenced; cancellation of a Docker client still
+does not prove that daemon-side build activity stopped. An uncertain external
+outcome must never be interpreted as safely terminated work.
 
 The build job receives no InstaBox credentials and does not run on the
 persistent machine. It runs after PostgreSQL worker recovery tests pass. A
@@ -58,9 +54,69 @@ owner, hashed token, and claim generation. One attempt can store one digest;
 repeated identical records are idempotent. A stale builder cannot publish a
 result after lease loss. The CI provenance database and images are disposable.
 
-This is fixture-only build verification. The persistent deployment worker still
-uses its simulated executor. Connecting it to a Docker-capable executor needs
-an authenticated, isolated request/response boundary with cancellation and
-orphan-build reconciliation. Until that boundary exists, no customer source or
-persistent-VM build is permitted. Build work can run more than once after a
+This is fixture-only build verification. The default worker remains simulated;
+test probes and the protected-main build harness opt into the authenticated
+executor. No customer source or persistent-VM build is permitted. Build work can run more than once after a
 crash; fencing protects metadata, not external execution.
+
+## Integrated executor (Stage A)
+
+`python -m lava.executor` is a separate, non-root Unix-socket daemon. The API
+never receives its socket or key. The worker connects with a read-only runtime
+mount. Linux peer credentials, an owner-private directory, a 0600 socket and a
+32-byte owner-only key are all required. Protocol version 1 uses the signing-key
+slot `local-v1`; HMAC authenticates the complete operation, job/deployment and
+execution identities, source/configuration revision, nonce, lease token/owner,
+claim generation and deadline. Authentication alone grants no execution rights:
+the executor locks the job row and independently checks PostgreSQL ownership.
+
+Provision the key once with `python -m lava.executor --socket /private/sock
+--key-file /private/key --provision-key`. Provisioning refuses overwrite and
+symlinks. Rotate by stopping worker/executor, provisioning a fresh owner-only
+file, switching both services to that file, and restarting them. Old signatures
+then fail closed; no overlapping old-key acceptance is provided. Never print a
+key or pass it in argv/environment. The shared UID is a dedicated runtime UID
+inside separate containers; same-user host processes are trusted. This is not
+an isolation boundary for arbitrary hostile same-UID host code.
+
+Migration 0009 stores one execution identity per job claim and globally unique
+hashed request nonces. Reusing an identity with a fresh nonce resolves the same
+execution; replaying the same envelope is rejected. Expired nonces can be
+removed after 24 hours because expired requests are independently rejected.
+A restricted `lava_executor` role can read job/source metadata, insert execution
+and nonce rows, update execution outcomes and request cancellation. It cannot
+read accounts, alter leases, own schema objects, or run migrations. Daemon startup
+rejects powerful or inherited roles. Worker and migration roles remain separate.
+
+The owned wrapper process records a durable execution nonce and completion
+receipt in a private spool. It kills its own child process group with bounded
+TERM/KILL handling before publishing a receipt. Cancellation uses private marker
+files, not recovered PID signals. On executor restart, receipts are reconciled;
+missing evidence remains UNKNOWN and blocks queue reclamation. A bounded scan
+runs every 500 ms, propagates cancellation/lease loss, and stops owned work on DB
+uncertainty. A singleton filesystem lock and session advisory lock prevent two
+executors from adopting the same spool/database. A lost advisory connection
+causes fail-closed exit. A current worker can adopt a proven completed receipt
+without rerunning external work. Artifact, job and deployment updates commit in
+one lease-fenced transaction; real builds stop at BUILT and never become ACTIVE.
+
+`compose.executor-probes.yaml` is an explicit test-only overlay. Supply a separate
+`POSTGRES_EXECUTOR_PASSWORD` and use it with `compose.yaml`; it replaces the
+simulated worker with the socket client. It provisions a private shared key,
+uses a read-only worker mount, and exposes no executor port or Docker socket.
+The verifier's `--executor-probes` option creates an owned disposable stack and
+checks an actual worker/daemon/process/database round trip. Its 4 GiB preflight
+is unchanged. Fixed sleep probes are simulations and create no OCI artifacts.
+
+The fixture-build daemon mode is restricted to protected-main disposable GitHub
+push runs. It verifies source/fixture/toolchain identity, runs approved argument
+arrays, exports OCI archives and verifies manifest/blob hashes. The trusted
+harness runs the worker in a non-root read-only container with no Docker socket;
+only the separate host executor has Docker authority. Checkout credentials are
+not persisted. BuildKit client cancellation cannot by itself prove that all
+Docker-daemon work stopped: such outcomes remain UNKNOWN and are not retried.
+The entire disposable runner is the final external cleanup boundary. This is a
+remaining real-build cancellation acceptance gate, not proof of termination.
+Current PR-head image builds are still unavailable under this policy, so PR #9
+must remain draft until an approved trusted verification path supplies that
+evidence. Neither an earlier commit's images nor controlled probes satisfy it.

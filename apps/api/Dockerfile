@@ -8,7 +8,7 @@ COPY apps/api/ ./
 RUN --mount=type=secret,id=proxy_ca \
     if [ -f /run/secrets/proxy_ca ]; then export SSL_CERT_FILE=/run/secrets/proxy_ca; fi; \
     uv sync --frozen --no-dev --no-editable
-RUN chmod -R a+rX /app
+RUN chmod -R a+rX /app && mkdir -m 0700 /run/lava-executor && chown 10001:10001 /run/lava-executor
 USER 10001:10001
 EXPOSE 8000
 CMD ["uvicorn", "lava.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

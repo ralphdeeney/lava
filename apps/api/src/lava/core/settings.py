@@ -36,15 +36,15 @@ class Settings(BaseSettings):
     worker_shutdown_grace_seconds: int = 20
     worker_concurrency: int = 1
     worker_retry_backoff_seconds: float = 1.0
-    worker_executor_mode: Literal["simulated", "controlled-probe"] = "simulated"
+    worker_executor_mode: Literal["simulated", "controlled-probe", "fixture-build"] = "simulated"
     executor_socket: str = ""
     executor_key_file: str = ""
     executor_fixture: Literal["python", "node", "go"] = "python"
 
     @model_validator(mode="after")
     def safe_executor(self):
-        if self.worker_executor_mode == "controlled-probe":
-            if self.environment != "test":
+        if self.worker_executor_mode in {"controlled-probe", "fixture-build"}:
+            if self.worker_executor_mode == "controlled-probe" and self.environment != "test":
                 raise ValueError("Controlled probes require the test environment")
             if not self.executor_socket.startswith("/") or not self.executor_key_file.startswith(
                 "/"
@@ -115,3 +115,25 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+class ExecutorSettings(BaseSettings):
+    """Executor-only configuration; never receives API or migration credentials."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="LAVA_EXECUTOR_", extra="ignore", hide_input_in_errors=True
+    )
+    database_url: SecretStr
+    database_role: str = "lava_executor"
+
+    @model_validator(mode="after")
+    def runtime_database(self):
+        url = make_url(self.database_url.get_secret_value())
+        if (
+            url.drivername != "postgresql+psycopg"
+            or not url.host
+            or not url.database
+            or url.username != self.database_role
+        ):
+            raise ValueError("Executor requires its dedicated PostgreSQL role")
+        return self

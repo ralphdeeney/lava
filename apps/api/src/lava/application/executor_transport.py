@@ -78,6 +78,8 @@ class ExecutorSocket:
                     response = '{"error":"rejected"}'
                 except SQLAlchemyError:
                     response = '{"error":"unavailable"}'
+                except Exception:
+                    response = '{"error":"unavailable"}'
                 writer.write(response.encode() + b"\n")
                 await writer.drain()
                 if response == '{"error":"rejected"}':

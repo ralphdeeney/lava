@@ -233,17 +233,18 @@ def test_worker_role_has_only_required_table_privileges(worker_database, monkeyp
             text("SELECT rolcreaterole OR rolsuper FROM pg_roles WHERE rolname = current_user")
         ):
             pytest.skip("local disposable database owner cannot create the worker role")
-    from lava.persistence.worker_role import main as provision_worker_role
+    import psycopg
+    from psycopg import sql
+
+    from lava.persistence.worker_role import provision
 
     password = "test-only-worker-password-" + uuid4().hex
-    monkeypatch.setenv("POSTGRES_WORKER_PASSWORD", password)
-    monkeypatch.setenv("LAVA_DATABASE_URL", os.environ["LAVA_DATABASE_URL"])
-    from lava.core.settings import get_settings
-
-    get_settings.cache_clear()
-    provision_worker_role()
+    role = "lava_worker_test_" + uuid4().hex[:12]
     url = make_url(os.environ["LAVA_DATABASE_URL"])
-    worker_url = url.set(username="lava_worker", password=password)
+    admin_url = url.set(drivername="postgresql").render_as_string(hide_password=False)
+    with psycopg.connect(admin_url) as connection:
+        provision(connection, password, role)
+    worker_url = url.set(username=role, password=password)
     worker_engine = create_engine(worker_url)
     try:
         with Session(worker_engine) as session:
@@ -254,7 +255,15 @@ def test_worker_role_has_only_required_table_privileges(worker_database, monkeyp
                 session.flush()
     finally:
         worker_engine.dispose()
-        get_settings.cache_clear()
+        with psycopg.connect(admin_url) as connection:
+            owner = connection.execute("SELECT current_user").fetchone()[0]
+            connection.execute(
+                sql.SQL("GRANT {} TO {} WITH INHERIT TRUE").format(
+                    sql.Identifier(role), sql.Identifier(owner)
+                )
+            )
+            connection.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+            connection.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
 
 
 def test_process_restart_reclaims_abandoned_job(worker_database):

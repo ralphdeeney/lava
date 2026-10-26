@@ -15,7 +15,18 @@ class ExecutionUncertain(RuntimeError):
 
 
 class SocketExecutor:
-    def __init__(self, path: Path, key: bytes, job, deployment, token: str, fixture: str):
+    def __init__(
+        self,
+        path: Path,
+        key: bytes,
+        job,
+        deployment,
+        token: str,
+        fixture: str,
+        mode: str = "controlled-probe",
+    ):
+        self.mode = mode
+        self.result = None
         self.path, self.key = path, key
         self.request = ExecutorRequest(
             str(uuid5(UUID(job.id), str(job.lease_generation))),
@@ -42,7 +53,11 @@ class SocketExecutor:
             expires_at=int(time.time()) + 30,
         )
         result = exchange(self.path, self.key, request)
-        if result.get("execution_id") != request.execution_id or "error" in result:
+        if (
+            result.get("execution_id") != request.execution_id
+            or result.get("mode") != self.mode
+            or "error" in result
+        ):
             raise ExecutionUncertain("Executor did not authorize the operation")
         return result
 
@@ -51,12 +66,24 @@ class SocketExecutor:
             return "cancelled"
         try:
             result = self.send("start")
-            deadline = time.monotonic() + 30
+            deadline = time.monotonic() + (1530 if self.mode == "fixture-build" else 30)
             while time.monotonic() < deadline:
                 if cancelled():
                     result = self.send("cancel")
                 state = result.get("status")
                 if state == "COMPLETED":
+                    if self.mode == "fixture-build":
+                        import re
+
+                        if not re.fullmatch(
+                            r"sha256:[0-9a-f]{64}", result.get("image_digest") or ""
+                        ):
+                            raise ExecutionUncertain("Executor completed without a verified image")
+                        self.result = {
+                            "execution_id": self.request.execution_id,
+                            "image_digest": result["image_digest"],
+                        }
+                        return "built"
                     return "success"
                 if state == "CANCELLED":
                     return "cancelled"

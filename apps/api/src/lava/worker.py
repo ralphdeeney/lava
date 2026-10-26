@@ -154,7 +154,9 @@ class DeploymentWorker:
             self.session.rollback()
             raise
 
-    def complete(self, job_id: str, token: str, success: bool) -> None:
+    def complete(
+        self, job_id: str, token: str, success: bool, *, build_result: dict | None = None
+    ) -> None:
         try:
             job = self.session.scalar(
                 select(DeploymentJob).where(DeploymentJob.id == job_id).with_for_update()
@@ -174,11 +176,38 @@ class DeploymentWorker:
             deployment = self.session.get(Deployment, job.deployment_id)
             if deployment is None:
                 raise LeaseLost("deployment not found")
+            if build_result is not None and not job.cancellation_requested_at:
+                from lava.application.build_artifacts import record_build_artifact
+
+                execution = self.session.get(BuildExecution, build_result["execution_id"])
+                if (
+                    execution is None
+                    or execution.job_id != job.id
+                    or execution.claim_generation != job.lease_generation
+                    or execution.kind != "fixture-build"
+                    or execution.status != "COMPLETED"
+                    or execution.image_digest != build_result["image_digest"]
+                ):
+                    raise LeaseLost("Build result does not belong to the current claim")
+                record_build_artifact(
+                    self.session,
+                    job_id=job.id,
+                    lease_owner=self.worker_id,
+                    lease_token=token,
+                    image_digest=execution.image_digest,
+                    railpack_version="0.43.0",
+                    buildkit_version="v0.34.0",
+                    commit=False,
+                )
             targets = (
                 ["cancelled"]
                 if job.cancellation_requested_at
                 else (
-                    ["building", "built", "deploying", "verifying", "active"]
+                    (
+                        ["building", "built"]
+                        if build_result is not None
+                        else ["building", "built", "deploying", "verifying", "active"]
+                    )
                     if success
                     else ["failed"]
                 )
@@ -264,6 +293,8 @@ class DeploymentWorker:
                         "last_error_code": "simulated_retryable",
                     },
                 )
+            elif outcome == "built":
+                self.complete(job.id, token, True, build_result=executor.result)
             else:
                 self.complete(job.id, token, outcome == "success")
         except LeaseLost:
@@ -289,7 +320,7 @@ def run_worker(
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
     executor_factory = None
-    if settings.worker_executor_mode == "controlled-probe":
+    if settings.worker_executor_mode in {"controlled-probe", "fixture-build"}:
         from pathlib import Path
 
         from lava.application.executor_client import SocketExecutor
@@ -305,6 +336,7 @@ def run_worker(
                 deployment,
                 token,
                 settings.executor_fixture,
+                mode=settings.worker_executor_mode,
             )
 
     while not stop.is_set():

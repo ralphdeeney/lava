@@ -8,7 +8,6 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from lava.application.executor_authorization import ExecutorDenied, authorize
@@ -56,6 +55,7 @@ def claimed():
             environment_id=env.id,
             service_id=service.id,
             source_type="git",
+            repository_url="https://github.com/ralphdeeney/lava",
             source_commit_sha="a" * 40,
             source_branch="main",
             configuration_revision=1,
@@ -71,6 +71,7 @@ def claimed():
         token = "1." + uuid4().hex
         job = db.scalar(select(DeploymentJob).where(DeploymentJob.deployment_id == deployment.id))
         job.status = "running"
+        job.attempt_count = 1
         job.lease_owner = "executor-test"
         job.lease_generation = 1
         job.lease_token_hash = hashlib.sha256(token.encode()).hexdigest()
@@ -91,6 +92,11 @@ def claimed():
             lease_token=token,
         )
     yield engine, req
+    with Session(engine) as cleanup:
+        job = cleanup.get(DeploymentJob, req.job_id)
+        if job.status not in {"succeeded", "failed", "cancelled"}:
+            job.status = "failed"
+            cleanup.commit()
     engine.dispose()
 
 
@@ -98,7 +104,7 @@ def test_durable_replay_identity_and_stale_generation(claimed):
     engine, req = claimed
     with Session(engine) as db:
         assert authorize(db, req).status == "UNKNOWN"
-        with pytest.raises(IntegrityError):
+        with pytest.raises(ExecutorDenied):
             authorize(db, req)
         with pytest.raises(ExecutorDenied):
             authorize(
@@ -122,7 +128,7 @@ def test_concurrent_duplicate_start_has_one_winner(claimed):
             try:
                 authorize(db, req)
                 return "accepted"
-            except IntegrityError:
+            except ExecutorDenied:
                 return "replayed"
 
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -139,7 +145,7 @@ def test_expiry_bad_token_and_transaction_rollback(claimed):
             authorize(db, replace(req, lease_token="wrong"))
         assert db.get(BuildExecution, req.execution_id) is None
         assert authorize(db, req).id == req.execution_id
-        with pytest.raises(IntegrityError):
+        with pytest.raises(ExecutorDenied):
             authorize(db, req)
         assert db.get(BuildExecution, req.execution_id) is not None
 
@@ -184,3 +190,51 @@ def test_unknown_blocks_reclaimed_attempt_and_stale_completion(claimed):
         db.commit()
         with pytest.raises(ExecutorDenied, match="uncertain"):
             authorize(db, newer)
+
+
+def test_build_publication_is_atomic_and_probe_cannot_forge_image(claimed, monkeypatch):
+    from lava.application.deployments import DeploymentService
+    from lava.db.base import BuildArtifact, DeploymentEvent
+    from lava.worker import DeploymentWorker, LeaseLost
+
+    engine, req = claimed
+    with Session(engine) as db:
+        execution = authorize(db, req, kind="fixture-build")
+        execution.status = "COMPLETED"
+        execution.image_digest = "sha256:" + "c" * 64
+        db.add(DeploymentEvent(deployment_id=req.deployment_id, sequence=0, to_status="queued"))
+        db.commit()
+        result = {"execution_id": execution.id, "image_digest": execution.image_digest}
+        worker = DeploymentWorker(db, req.lease_owner)
+        original = DeploymentService.transition
+
+        def interrupted(*args, **kwargs):
+            raise RuntimeError("injected transaction interruption")
+
+        monkeypatch.setattr(DeploymentService, "transition", interrupted)
+        with pytest.raises(RuntimeError, match="interruption"):
+            worker.complete(req.job_id, req.lease_token, True, build_result=result)
+        assert (
+            db.scalar(select(BuildArtifact).where(BuildArtifact.deployment_id == req.deployment_id))
+            is None
+        )
+        assert db.get(DeploymentJob, req.job_id).status == "running"
+        assert db.get(Deployment, req.deployment_id).status == "queued"
+        monkeypatch.setattr(DeploymentService, "transition", original)
+        execution = db.get(BuildExecution, req.execution_id)
+        execution.kind = "controlled-probe"
+        db.commit()
+        with pytest.raises(LeaseLost):
+            worker.complete(req.job_id, req.lease_token, True, build_result=result)
+        execution = db.get(BuildExecution, req.execution_id)
+        execution.kind = "fixture-build"
+        db.commit()
+        worker.complete(req.job_id, req.lease_token, True, build_result=result)
+        assert db.get(DeploymentJob, req.job_id).status == "succeeded"
+        assert db.get(Deployment, req.deployment_id).status == "built"
+        assert (
+            db.scalar(
+                select(BuildArtifact).where(BuildArtifact.deployment_id == req.deployment_id)
+            ).image_digest
+            == result["image_digest"]
+        )

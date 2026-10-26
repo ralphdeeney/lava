@@ -1,0 +1,58 @@
+# Explicit test-only overlay. The executor has no Docker socket or public ports.
+services:
+  executor-role:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      LAVA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-lava}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lava}
+      POSTGRES_EXECUTOR_PASSWORD: ${POSTGRES_EXECUTOR_PASSWORD:?Set a separate executor password}
+    command: [python, -m, lava.persistence.executor_role]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+  executor-key:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command:
+      - python
+      - -c
+      - "from pathlib import Path; from lava.executor import load_key, provision_key; p=Path('/run/lava-executor/key'); load_key(p) if p.exists() else provision_key(p)"
+    volumes: [executor_runtime:/run/lava-executor]
+  executor:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      LAVA_ENVIRONMENT: test
+      LAVA_EXECUTOR_DATABASE_URL: postgresql+psycopg://lava_executor:${POSTGRES_EXECUTOR_PASSWORD}@db:5432/${POSTGRES_DB:-lava}
+    command: [python, -m, lava.executor, --socket, /run/lava-executor/sock, --key-file, /run/lava-executor/key]
+    volumes: [executor_runtime:/run/lava-executor]
+    depends_on:
+      executor-role:
+        condition: service_completed_successfully
+      executor-key:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, -c, "import socket; s=socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect('/run/lava-executor/sock'); s.close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 64
+    restart: unless-stopped
+    stop_grace_period: 10s
+  worker:
+    environment:
+      LAVA_ENVIRONMENT: test
+      LAVA_WORKER_EXECUTOR_MODE: controlled-probe
+      LAVA_EXECUTOR_SOCKET: /run/lava-executor/sock
+      LAVA_EXECUTOR_KEY_FILE: /run/lava-executor/key
+    volumes: [executor_runtime:/run/lava-executor:ro]
+    depends_on:
+      executor:
+        condition: service_healthy
+volumes:
+  executor_runtime:

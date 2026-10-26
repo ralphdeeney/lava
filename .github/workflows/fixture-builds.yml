@@ -27,6 +27,8 @@ jobs:
       LAVA_DATABASE_URL: postgresql+psycopg://lava:ci-only-password@127.0.0.1:5432/lava_test
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v6
         with:
           version: '0.12.23'
@@ -56,6 +58,8 @@ jobs:
       LAVA_DATABASE_URL: postgresql+psycopg://lava:ci-only-password@127.0.0.1:5432/lava_test
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: docker/setup-docker-action@v4
         with:
           daemon-config: |
@@ -83,7 +87,7 @@ jobs:
         working-directory: apps/api
         run: uv run --locked alembic upgrade head
       - name: Build audited Python, Node and Go fixtures
-        run: uv run --project apps/api --locked python scripts/verify_fixture_builds.py
+        run: uv run --project apps/api --locked python scripts/verify_executor_fixture_builds.py
       - name: Stop owned provenance database
         if: always()
         run: |
