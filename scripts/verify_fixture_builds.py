@@ -67,6 +67,9 @@ def main() -> None:
     if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
         raise RuntimeError("Invalid source commit")
     evidence = []
+    builder = run(["docker", "context", "show"]).strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", builder):
+        raise RuntimeError("Unsafe Docker context name")
     with tempfile.TemporaryDirectory(prefix="lava-fixture-build-") as scratch:
         temporary = Path(scratch)
         railpack = install_railpack(temporary)
@@ -99,7 +102,7 @@ def main() -> None:
                         "buildx",
                         "build",
                         "--builder",
-                        "default",
+                        builder,
                         "--no-cache",
                         "--progress",
                         "plain",
