@@ -38,6 +38,24 @@ FRONTEND = (
     "sha256:355ef61fae6f2551103cd8b10c710cb07167dd353d561f15c69b8d7ac1c676cc"
 )
 FIXTURES = {"python": ["--start-cmd", "python main.py"], "node": [], "go": []}
+BUILDKIT_VERSION = "v0.34.0"
+# Hashes of audited fixture trees, including relative names and file contents.
+FIXTURE_SHA256 = {
+    "go": "9a5758a9e2c9899fda48295b50782d10d75f31d49f00fa5586e934c85c65d1a0",
+    "node": "6418b33a80ec49a53c2c93d3ca7d342a9396f61918d01fc591818ac2fb1cdd56",
+    "python": "f51db1d534fb49dccd7457a1e16068849ee1ed1f5b65a4bd5affc8b7bcdc9171",
+}
+
+
+def fixture_digest(context: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(context.rglob("*")):
+        if path.is_symlink():
+            raise RuntimeError("Fixture symlinks are forbidden")
+        if path.is_file():
+            digest.update(path.relative_to(context).as_posix().encode() + b"\0")
+            digest.update(path.read_bytes() + b"\0")
+    return digest.hexdigest()
 
 
 def run(argv: list[str], *, timeout: int = 1200) -> str:
@@ -134,6 +152,13 @@ def main() -> None:
     source_commit = run(["git", "rev-parse", "HEAD"]).strip()
     if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
         raise RuntimeError("Invalid source commit")
+    if (
+        os.environ.get("GITHUB_SHA") != source_commit
+        or os.environ.get("GITHUB_REF") != "refs/heads/main"
+    ):
+        raise RuntimeError(
+            "Fixture build source is not the exact protected-main commit"
+        )
     evidence = []
     database_url = os.environ.get("LAVA_DATABASE_URL")
     if not database_url:
@@ -151,6 +176,8 @@ def main() -> None:
     if buildkit_match is None:
         raise RuntimeError("BuildKit version is unavailable")
     buildkit_version = buildkit_match.group(1)
+    if buildkit_version != BUILDKIT_VERSION:
+        raise RuntimeError("Unapproved BuildKit version")
     with tempfile.TemporaryDirectory(prefix="lava-fixture-build-") as scratch:
         temporary = Path(scratch)
         railpack = install_railpack(temporary)
@@ -159,6 +186,8 @@ def main() -> None:
                 engine, name, source_commit
             )
             context = ROOT / "build-fixtures" / name
+            if fixture_digest(context) != FIXTURE_SHA256[name]:
+                raise RuntimeError(f"Audited {name} fixture digest mismatch")
             plan = temporary / f"{name}-plan.json"
             info = temporary / f"{name}-info.json"
             run(
