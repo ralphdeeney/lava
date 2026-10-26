@@ -1,0 +1,120 @@
+name: Promoted PR 9 fixture builds
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lava-promoted-fixture-build-9
+  cancel-in-progress: false
+jobs:
+  approved-fixtures:
+    if: github.repository == 'ralphdeeney/lava' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout one reviewed candidate commit
+        uses: actions/checkout@v4
+        with:
+          ref: 50537485d90be03a7b1520dffc1117ac8d4e2674
+          path: candidate
+          persist-credentials: false
+      - name: Verify immutable source and audited fixtures before any candidate code runs
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          import pathlib
+          import shutil
+          import subprocess
+
+          root = pathlib.Path('candidate').resolve()
+          approved = '50537485d90be03a7b1520dffc1117ac8d4e2674'
+          fixtures = {
+              'buildkit-cancel': '3ff3ac56c7b1ba2300319ef5482df57d72372f90d1cd06f6ba6402d8ca575ea0',
+              'buildkit-fail': '6769e857f96e7b24b0f57e5c43933ce8a18610c4d1777dd91df0694a80331ba6',
+              'python': 'f51db1d534fb49dccd7457a1e16068849ee1ed1f5b65a4bd5affc8b7bcdc9171',
+              'node': '6418b33a80ec49a53c2c93d3ca7d342a9396f61918d01fc591818ac2fb1cdd56',
+              'go': '9a5758a9e2c9899fda48295b50782d10d75f31d49f00fa5586e934c85c65d1a0',
+          }
+          actual = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
+          if actual != approved:
+              raise SystemExit('Candidate commit differs from protected allowlist')
+          if subprocess.check_output(['git', '-C', str(root), 'status', '--porcelain']):
+              raise SystemExit('Candidate checkout is dirty')
+          for fixture, expected in fixtures.items():
+              directory = root / 'build-fixtures' / fixture
+              if directory.is_symlink() or directory.parent.is_symlink() or not directory.is_dir():
+                  raise SystemExit('Fixture directory is unsafe')
+              digest = hashlib.sha256()
+              for path in sorted(directory.rglob('*')):
+                  if path.is_symlink():
+                      raise SystemExit('Fixture symlinks are forbidden')
+                  if path.is_file():
+                      digest.update(path.relative_to(directory).as_posix().encode() + b'\0')
+                      digest.update(path.read_bytes() + b'\0')
+              if digest.hexdigest() != expected:
+                  raise SystemExit('Fixture hash differs from protected allowlist')
+          if shutil.disk_usage(root).free < 4 * 1024**3:
+              raise SystemExit('At least 4 GiB free on source storage is required')
+          print(f'Approved exact commit and {len(fixtures)} audited fixtures')
+          PY
+      - uses: docker/setup-docker-action@v4
+        with:
+          daemon-config: |
+            {"features":{"containerd-snapshotter":true}}
+      - name: Verify disposable Docker storage capacity
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import shutil
+          import subprocess
+          root = pathlib.Path(subprocess.check_output(['docker', 'info', '--format', '{{.DockerRootDir}}'], text=True).strip())
+          if shutil.disk_usage(root).free < 4 * 1024**3:
+              raise SystemExit('At least 4 GiB free on Docker storage is required')
+          print('Disposable Docker storage preflight passed')
+          PY
+      - name: Start owned disposable provenance database
+        run: >-
+          docker run -d --name lava-promoted-9-db
+          --tmpfs /var/lib/postgresql/data:rw,size=256m
+          -e POSTGRES_USER=lava -e POSTGRES_PASSWORD=ci-only-password
+          -e POSTGRES_DB=lava_test -p 127.0.0.1:5432:5432
+          postgres:17.9-bookworm@sha256:47f917f7409eacd22fc5dfb1dee634e1b55cf0c01d1a7eb701be2227a03e0641
+      - name: Wait for owned database
+        run: |
+          for attempt in {1..30}; do
+            if docker exec lava-promoted-9-db pg_isready -U lava -d lava_test >/dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.23'
+          python-version: '3.13.5'
+      - name: Install reviewed, locked candidate dependencies
+        working-directory: candidate
+        run: uv sync --project apps/api --locked
+      - name: Migrate disposable provenance database
+        working-directory: candidate/apps/api
+        env:
+          LAVA_DATABASE_URL: postgresql+psycopg://lava:ci-only-password@127.0.0.1:5432/lava_test
+        run: uv run --locked alembic upgrade head
+      - name: Build audited fixtures through reviewed executor
+        working-directory: candidate
+        env:
+          LAVA_DATABASE_URL: postgresql+psycopg://lava:ci-only-password@127.0.0.1:5432/lava_test
+          LAVA_PROMOTED_SOURCE_SHA: 50537485d90be03a7b1520dffc1117ac8d4e2674
+        run: uv run --project apps/api --locked python scripts/verify_executor_fixture_builds.py
+      - name: Stop only the owned database
+        if: always()
+        run: |
+          if docker ps -aq --filter name='^/lava-promoted-9-db$' | grep -q .; then
+            docker rm -f lava-promoted-9-db
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: promoted-fixture-evidence-5053748
+          path: candidate/test-results/fixture-builds.json
+          retention-days: 7
