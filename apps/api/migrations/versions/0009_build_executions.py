@@ -35,6 +35,7 @@ def upgrade() -> None:
             name="ck_build_execution_status",
         ),
     )
+    op.create_index("ix_build_executions_job", "build_executions", ["job_id"])
     op.create_table(
         "build_request_nonces",
         sa.Column("nonce_hash", sa.String(64), primary_key=True),
@@ -52,4 +53,5 @@ def downgrade() -> None:
             raise RuntimeError("Downgrade refused: build execution history must be preserved")
     op.drop_index("ix_build_request_nonces_expiry", table_name="build_request_nonces")
     op.drop_table("build_request_nonces")
+    op.drop_index("ix_build_executions_job", table_name="build_executions")
     op.drop_table("build_executions")

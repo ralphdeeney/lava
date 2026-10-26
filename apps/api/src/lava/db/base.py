@@ -471,6 +471,7 @@ class BuildExecution(Base):
     )
     __table_args__ = (
         UniqueConstraint("job_id", "claim_generation", name="uq_build_execution_claim"),
+        Index("ix_build_executions_job", "job_id"),
         CheckConstraint(
             "status IN ('UNKNOWN','RUNNING','COMPLETED','CANCELLED','FAILED')",
             name="ck_build_execution_status",
@@ -485,3 +486,4 @@ class BuildRequestNonce(Base):
         ForeignKey("build_executions.id", ondelete="RESTRICT"), nullable=False
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (Index("ix_build_request_nonces_expiry", "expires_at"),)
