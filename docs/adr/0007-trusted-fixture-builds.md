@@ -35,6 +35,17 @@ isolation mechanism or a protected promotion step before Docker-capable
 execution. This boundary has not yet been implemented; PR #9 must remain
 draft. A green `checks` result does not attest to real candidate builds.
 
+A protected promotion workflow may pin one reviewed candidate SHA in its
+workflow definition, verify that checkout and the audited fixture hashes before
+execution, and run it on a disposable Docker runner with a read-only repository
+token and no infrastructure secrets. The candidate's `workflow_dispatch`
+environment marker merely identifies this mode to the build adapter; it is not
+an authorization secret. The protected workflow's immutable SHA allowlist and
+the review/merge of that workflow are the authorization boundary. Changing the
+candidate SHA requires another protected workflow change. This grants Docker
+authority to the specifically promoted code, so its entire executable tree and
+dependency lockfile require review before promotion.
+
 The worker has no Docker socket. The integrated executor described below adds
 authenticated transport, durable replay protection and controlled-process
 recovery. Database publication is fenced; cancellation of a Docker client still

@@ -77,14 +77,22 @@ def install_railpack(directory: Path) -> Path:
 
 
 def validate_trusted_source(root: Path, source_commit: str, fixture: str) -> Path:
-    if (
-        os.environ.get("GITHUB_ACTIONS") != "true"
-        or os.environ.get("GITHUB_EVENT_NAME") != "push"
-        or os.environ.get("GITHUB_REF") != "refs/heads/main"
-        or os.environ.get("GITHUB_REPOSITORY") != "ralphdeeney/lava"
-        or os.environ.get("GITHUB_SHA") != source_commit
+    protected_main = (
+        os.environ.get("GITHUB_EVENT_NAME") == "push"
+        and os.environ.get("GITHUB_SHA") == source_commit
+    )
+    protected_promotion = (
+        os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+        and os.environ.get("LAVA_PROMOTED_SOURCE_SHA") == source_commit
+        and os.environ.get("GITHUB_SHA") != source_commit
+    )
+    if not (
+        os.environ.get("GITHUB_ACTIONS") == "true"
+        and os.environ.get("GITHUB_REF") == "refs/heads/main"
+        and os.environ.get("GITHUB_REPOSITORY") == "ralphdeeney/lava"
+        and (protected_main or protected_promotion)
     ):
-        raise PermissionError("Real fixture builds require the protected-main runner")
+        raise PermissionError("Real fixture builds require a protected trusted workflow")
     if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
         raise ValueError("Invalid fixture source commit")
     actual = subprocess.check_output(

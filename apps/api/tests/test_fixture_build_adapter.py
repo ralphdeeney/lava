@@ -15,7 +15,7 @@ from lava.builds.fixture_toolchain import (
 
 def test_real_build_is_rejected_outside_protected_main(monkeypatch):
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
-    with pytest.raises(PermissionError, match="protected-main"):
+    with pytest.raises(PermissionError, match="protected trusted workflow"):
         validate_trusted_source(Path("/nonexistent"), "a" * 40, "python")
 
 
