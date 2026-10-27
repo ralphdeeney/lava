@@ -602,6 +602,9 @@ if __name__ == "__main__":
         output.write_text(
             json.dumps({"status": "failed", "error": detail}, indent=2) + "\n"
         )
+        print("FAILURE_DIAGNOSTIC_BEGIN", flush=True)
+        print(detail, flush=True)
+        print("FAILURE_DIAGNOSTIC_END", flush=True)
         for line in detail.splitlines()[-80:]:
             print(f"::error::{line[:500]}", flush=True)
         raise SystemExit(1) from None
