@@ -383,17 +383,28 @@ def main():
             }
             command = worker_command(container_name, image, runtime)
             if fixture == "buildkit-cancel":
+                worker_log = runtime / f"{fixture}-{uuid4().hex[:8]}.log"
+                worker_output = worker_log.open("w+", encoding="utf-8")
                 worker = subprocess.Popen(
                     command,
                     env=worker_env,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    stdout=worker_output,
+                    stderr=subprocess.STDOUT,
                 )
                 deadline = time.monotonic() + 90
                 while time.monotonic() < deadline:
                     if worker.poll() is not None:
+                        worker_output.flush()
+                        worker_output.seek(0)
+                        diagnostic = worker_output.read()[-4000:]
+                        worker_output.close()
                         raise RuntimeError(
-                            "Long-running fixture exited before BuildKit execution"
+                            "Long-running fixture exited before BuildKit execution: "
+                            + re.sub(
+                                r"(?i)(password|secret|token|key)=\S+",
+                                r"\1=<redacted>",
+                                diagnostic,
+                            )
                         )
                     active = subprocess.check_output(["ps", "-eo", "args"], text=True)
                     buildkit = subprocess.run(
@@ -423,7 +434,19 @@ def main():
                         )
                         DeploymentWorker(db, "trusted-fixture-worker").cancel(job.id)
                 if worker.wait(timeout=60):
-                    raise RuntimeError("Long-running fixture worker failed")
+                    worker_output.flush()
+                    worker_output.seek(0)
+                    diagnostic = worker_output.read()[-4000:]
+                    worker_output.close()
+                    raise RuntimeError(
+                        "Long-running fixture worker failed: "
+                        + re.sub(
+                            r"(?i)(password|secret|token|key)=\S+",
+                            r"\1=<redacted>",
+                            diagnostic,
+                        )
+                    )
+                worker_output.close()
             else:
                 subprocess.run(
                     command,
