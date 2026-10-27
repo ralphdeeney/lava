@@ -229,7 +229,14 @@ def main():
             """Keep the verifier's single owned builder available between cases."""
             nonlocal builder_created
             inspected = subprocess.run(
-                ["docker", "buildx", "inspect", "--builder", BUILDER_NAME, "--bootstrap"],
+                [
+                    "docker",
+                    "buildx",
+                    "inspect",
+                    "--builder",
+                    BUILDER_NAME,
+                    "--bootstrap",
+                ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=30,
@@ -265,6 +272,7 @@ def main():
                 timeout=120,
             )
             builder_created = True
+
         runtime = Path(tempfile.mkdtemp(prefix="lava-build-executor-"))
         provision_key(runtime / "key")
         executor_url = url.set(
