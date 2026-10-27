@@ -316,6 +316,9 @@ def main():
                 **os.environ,
                 "LAVA_DATABASE_URL": worker_url,
                 "LAVA_EXECUTOR_FIXTURE": fixture,
+                "LAVA_WORKER_EXECUTOR_MODE": "fixture-build",
+                "LAVA_EXECUTOR_SOCKET": "/runtime/sock",
+                "LAVA_EXECUTOR_KEY_FILE": "/runtime/key",
             }
             # Command text is fixed trusted harness code, never PR input.
             subprocess.run(
