@@ -8,6 +8,7 @@ of the private executor transport. No API or infrastructure credentials enter it
 import contextlib
 import json
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -529,8 +530,14 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as error:
+        detail = re.sub(
+            r"(?i)(password|token|secret|key)\s*[=:]\s*\S+",
+            r"\1=[REDACTED]",
+            str(error),
+        )[:400]
         print(
-            f"::error::Trusted executor fixture verification failed ({type(error).__name__})",
+            f"::error::Trusted executor fixture verification failed "
+            f"({type(error).__name__}): {detail}",
             flush=True,
         )
         raise SystemExit(1) from None
