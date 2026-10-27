@@ -371,6 +371,9 @@ def main():
                 **os.environ,
                 "LAVA_DATABASE_URL": worker_url,
                 "LAVA_EXECUTOR_FIXTURE": fixture,
+                "LAVA_WORKER_EXECUTOR_MODE": "fixture-build",
+                "LAVA_EXECUTOR_SOCKET": "/runtime/sock",
+                "LAVA_EXECUTOR_KEY_FILE": "/runtime/key",
             }
             command = worker_command(container_name, image, runtime)
             if fixture == "buildkit-cancel":
