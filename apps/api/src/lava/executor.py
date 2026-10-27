@@ -202,11 +202,9 @@ class ExecutorService:
                         argv,
                         timeout=(
                             300
-                            if self.kind == "fixture-build"
-                            and request.fixture == "buildkit-cancel"
+                            if self.kind == "fixture-build" and request.fixture == "buildkit-cancel"
                             else 30
-                            if self.kind == "fixture-build"
-                            and request.fixture == "buildkit-fail"
+                            if self.kind == "fixture-build" and request.fixture == "buildkit-fail"
                             else 1500
                             if self.kind == "fixture-build"
                             else 10
