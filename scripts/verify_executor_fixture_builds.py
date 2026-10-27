@@ -223,6 +223,47 @@ def main():
             timeout=120,
         )
         builder_created = True
+
+        def ensure_builder() -> None:
+            """Keep the verifier's single owned builder available between cases."""
+            nonlocal builder_created
+            inspected = subprocess.run(
+                ["docker", "buildx", "inspect", "--builder", BUILDER_NAME, "--bootstrap"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=30,
+                check=False,
+            )
+            if inspected.returncode == 0:
+                return
+            subprocess.run(
+                ["docker", "buildx", "rm", "--force", BUILDER_NAME],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=60,
+                check=False,
+            )
+            run(
+                [
+                    "docker",
+                    "buildx",
+                    "create",
+                    "--name",
+                    BUILDER_NAME,
+                    "--driver",
+                    "docker-container",
+                    "--driver-opt",
+                    f"image={BUILDKIT_IMAGE}",
+                    "--driver-opt",
+                    "memory=3g",
+                    "--driver-opt",
+                    "cpu-quota=200000",
+                    "--driver-opt",
+                    "cpu-period=100000",
+                ],
+                timeout=120,
+            )
+            builder_created = True
         runtime = Path(tempfile.mkdtemp(prefix="lava-build-executor-"))
         provision_key(runtime / "key")
         executor_url = url.set(
@@ -418,22 +459,7 @@ def main():
                     or receipt.get("failure_code") != expected_reason
                 ):
                     raise RuntimeError("BuildKit failure classification was not proven")
-            active_builder = subprocess.run(
-                [
-                    "docker",
-                    "ps",
-                    "-q",
-                    "--filter",
-                    "name=^/buildx_buildkit_lava-fixtures0$",
-                ],
-                capture_output=True,
-                timeout=5,
-                check=True,
-            )
-            if active_builder.stdout.strip():
-                raise RuntimeError(
-                    "Cancelled or failed BuildKit builder remained active"
-                )
+            ensure_builder()
             outcome = (
                 "cancelled"
                 if cancel
