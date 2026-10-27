@@ -15,7 +15,7 @@ jobs:
       - name: Checkout one reviewed candidate commit
         uses: actions/checkout@v4
         with:
-          ref: 50537485d90be03a7b1520dffc1117ac8d4e2674
+          ref: 505590eef9fa0d19086ddf7775a795e0a778779e
           path: candidate
           persist-credentials: false
       - name: Verify immutable source and audited fixtures before any candidate code runs
@@ -29,7 +29,7 @@ jobs:
           import subprocess
 
           root = pathlib.Path('candidate').resolve()
-          approved = '50537485d90be03a7b1520dffc1117ac8d4e2674'
+          approved = '505590eef9fa0d19086ddf7775a795e0a778779e'
           fixtures = {
               'buildkit-cancel': '3ff3ac56c7b1ba2300319ef5482df57d72372f90d1cd06f6ba6402d8ca575ea0',
               'buildkit-fail': '6769e857f96e7b24b0f57e5c43933ce8a18610c4d1777dd91df0694a80331ba6',
@@ -104,7 +104,7 @@ jobs:
         working-directory: candidate
         env:
           LAVA_DATABASE_URL: postgresql+psycopg://lava:ci-only-password@127.0.0.1:5432/lava_test
-          LAVA_PROMOTED_SOURCE_SHA: 50537485d90be03a7b1520dffc1117ac8d4e2674
+          LAVA_PROMOTED_SOURCE_SHA: 505590eef9fa0d19086ddf7775a795e0a778779e
         run: uv run --project apps/api --locked python scripts/verify_executor_fixture_builds.py
       - name: Stop only the owned database
         if: always()
@@ -115,6 +115,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: promoted-fixture-evidence-5053748
+          name: promoted-fixture-evidence-505590e
           path: candidate/test-results/fixture-builds.json
           retention-days: 7
