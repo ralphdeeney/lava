@@ -39,7 +39,9 @@ class Settings(BaseSettings):
     worker_executor_mode: Literal["simulated", "controlled-probe", "fixture-build"] = "simulated"
     executor_socket: str = ""
     executor_key_file: str = ""
-    executor_fixture: Literal["python", "node", "go"] = "python"
+    executor_fixture: Literal[
+        "python", "node", "go", "buildkit-fail", "buildkit-cancel"
+    ] = "python"
 
     @model_validator(mode="after")
     def safe_executor(self):
@@ -50,6 +52,11 @@ class Settings(BaseSettings):
                 "/"
             ):
                 raise ValueError("Executor socket and key must be absolute paths")
+            if (
+                self.worker_executor_mode == "controlled-probe"
+                and self.executor_fixture in {"buildkit-fail", "buildkit-cancel"}
+            ):
+                raise ValueError("BuildKit fixtures require the trusted fixture executor")
         return self
 
     @model_validator(mode="after")

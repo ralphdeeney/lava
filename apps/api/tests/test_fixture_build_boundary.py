@@ -7,7 +7,34 @@ from types import SimpleNamespace
 
 import pytest
 
+from lava.core.settings import Settings
+
 ROOT = Path(__file__).resolve().parents[3]
+
+
+@pytest.mark.parametrize("fixture", ["buildkit-fail", "buildkit-cancel"])
+def test_audited_negative_fixture_can_start_trusted_worker(fixture):
+    settings = Settings(
+        database_url="postgresql+psycopg://lava:test@127.0.0.1/lava_test",
+        worker_executor_mode="fixture-build",
+        executor_fixture=fixture,
+        executor_socket="/runtime/sock",
+        executor_key_file="/runtime/key",
+    )
+    assert settings.executor_fixture == fixture
+
+
+@pytest.mark.parametrize("fixture", ["buildkit-fail", "buildkit-cancel"])
+def test_negative_fixture_cannot_use_probe_executor(fixture):
+    with pytest.raises(ValueError, match="trusted fixture executor"):
+        Settings(
+            database_url="postgresql+psycopg://lava:test@127.0.0.1/lava_test",
+            environment="test",
+            worker_executor_mode="controlled-probe",
+            executor_fixture=fixture,
+            executor_socket="/runtime/sock",
+            executor_key_file="/runtime/key",
+        )
 
 
 def _verifier():
