@@ -398,8 +398,23 @@ def main():
                         worker_output.seek(0)
                         diagnostic = worker_output.read()[-4000:]
                         worker_output.close()
+                        with Session(engine) as db:
+                            early_job = db.scalar(
+                                select(DeploymentJob).where(
+                                    DeploymentJob.deployment_id == deployment_id
+                                )
+                            )
+                            early_execution = db.scalar(
+                                select(BuildExecution).where(
+                                    BuildExecution.job_id == early_job.id
+                                )
+                            )
+                            early_deployment = db.get(Deployment, deployment_id)
                         raise RuntimeError(
                             "Long-running fixture exited before BuildKit execution: "
+                            f"returncode={worker.returncode} job={early_job.status} "
+                            f"deployment={early_deployment.status} "
+                            f"execution={early_execution.status if early_execution else 'missing'}; "
                             + re.sub(
                                 r"(?i)(password|secret|token|key)=\S+",
                                 r"\1=<redacted>",
