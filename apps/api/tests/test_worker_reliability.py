@@ -1,17 +1,23 @@
 """Real PostgreSQL regression cases for job/deployment consistency."""
 
 import os
+import subprocess
+import sys
+import threading
 import time
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
+from lava.application.build_artifacts import record_build_artifact
 from lava.application.deployments import DeploymentService
 from lava.db.base import (
+    BuildArtifact,
     Deployment,
     DeploymentEvent,
     DeploymentJob,
@@ -75,6 +81,7 @@ def worker_database():
         session.commit()
         yield engine, job.id, deployment.id
         session.delete(job)
+        session.query(BuildArtifact).filter_by(deployment_id=deployment.id).delete()
         session.query(DeploymentEvent).filter_by(deployment_id=deployment.id).delete()
         session.delete(deployment)
         session.flush()
@@ -218,3 +225,185 @@ def test_cancel_during_retry_backoff_is_terminal(worker_database):
     with Session(engine) as session:
         assert session.get(DeploymentJob, job_id).status == "cancelled"
         assert session.get(Deployment, deployment_id).status == "cancelled"
+
+
+def test_worker_role_has_only_required_table_privileges(worker_database, monkeypatch):
+    engine, _, _ = worker_database
+    with engine.connect() as connection:
+        if not connection.scalar(
+            text("SELECT rolcreaterole OR rolsuper FROM pg_roles WHERE rolname = current_user")
+        ):
+            pytest.skip("local disposable database owner cannot create the worker role")
+    import psycopg
+    from psycopg import sql
+
+    from lava.persistence.worker_role import provision
+
+    password = "test-only-worker-password-" + uuid4().hex
+    role = "lava_worker_test_" + uuid4().hex[:12]
+    url = make_url(os.environ["LAVA_DATABASE_URL"])
+    admin_url = url.set(drivername="postgresql").render_as_string(hide_password=False)
+    with psycopg.connect(admin_url) as connection:
+        provision(connection, password, role)
+    worker_url = url.set(username=role, password=password)
+    worker_engine = create_engine(worker_url)
+    try:
+        with Session(worker_engine) as session:
+            assert session.scalar(select(DeploymentJob.id).limit(1)) is not None
+            assert session.scalar(select(Deployment.id).limit(1)) is not None
+            with pytest.raises(ProgrammingError):
+                session.scalar(select(User.id).limit(1))
+                session.flush()
+    finally:
+        worker_engine.dispose()
+        with psycopg.connect(admin_url) as connection:
+            owner = connection.execute("SELECT current_user").fetchone()[0]
+            connection.execute(
+                sql.SQL("GRANT {} TO {} WITH INHERIT TRUE").format(
+                    sql.Identifier(role), sql.Identifier(owner)
+                )
+            )
+            connection.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+            connection.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
+
+
+def test_process_restart_reclaims_abandoned_job(worker_database):
+    engine, job_id, deployment_id = worker_database
+    claim_script = (
+        "import os,time; from sqlalchemy import create_engine; from sqlalchemy.orm import Session; "
+        "from lava.worker import DeploymentWorker; "
+        "engine=create_engine(os.environ['LAVA_DATABASE_URL']); "
+        "session=Session(engine); assert DeploymentWorker(session,'dead-worker').claim(); "
+        "print('claimed',flush=True); time.sleep(60)"
+    )
+    first = subprocess.Popen(
+        [sys.executable, "-c", claim_script],
+        env=os.environ.copy(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    try:
+        assert first.stdout.readline().strip() == "claimed"
+    finally:
+        first.kill()
+        first.wait(timeout=5)
+    with Session(engine) as session:
+        job = session.get(DeploymentJob, job_id)
+        job.leased_until = datetime.now(UTC) - timedelta(seconds=1)
+        session.commit()
+    recovered = subprocess.Popen(
+        [sys.executable, "-m", "lava.worker"],
+        env=os.environ.copy(),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            with Session(engine) as session:
+                if session.get(DeploymentJob, job_id).status == "succeeded":
+                    assert session.get(Deployment, deployment_id).status == "active"
+                    break
+            time.sleep(0.1)
+        else:
+            pytest.fail("restarted worker did not reclaim the abandoned job")
+    finally:
+        recovered.terminate()
+        recovered.wait(timeout=5)
+
+
+def test_claim_disconnect_does_not_lose_job(worker_database):
+    engine, job_id, _ = worker_database
+    with Session(engine) as broken:
+        pid = broken.scalar(text("SELECT pg_backend_pid()"))
+        with engine.begin() as killer:
+            assert killer.scalar(text("SELECT pg_terminate_backend(:pid)"), {"pid": pid})
+        with pytest.raises(OperationalError):
+            DeploymentWorker(broken, "worker-a").claim()
+    with Session(engine) as recovered:
+        job, _ = DeploymentWorker(recovered, "worker-b").claim()
+        assert job.id == job_id
+
+
+def test_heartbeat_disconnect_blocks_completion(worker_database, monkeypatch):
+    engine, job_id, deployment_id = worker_database
+    original = DeploymentWorker.heartbeat
+    heartbeat_started = threading.Event()
+    disconnect_heartbeat = threading.Event()
+
+    def disconnected_heartbeat(self, job_id, token):
+        heartbeat_started.set()
+        assert disconnect_heartbeat.wait(timeout=5)
+        pid = self.session.scalar(text("SELECT pg_backend_pid()"))
+        with engine.begin() as killer:
+            assert killer.scalar(text("SELECT pg_terminate_backend(:pid)"), {"pid": pid})
+        original(self, job_id, token)
+
+    monkeypatch.setattr(DeploymentWorker, "heartbeat", disconnected_heartbeat)
+
+    class SlowExecutor:
+        def run(self, cancelled):
+            assert heartbeat_started.wait(timeout=5)
+            disconnect_heartbeat.set()
+            return "success"
+
+    with Session(engine) as session:
+        assert DeploymentWorker(
+            session, "worker-a", lease_seconds=3, heartbeat_interval=0.5
+        ).process_once(SlowExecutor())
+    with Session(engine) as session:
+        assert session.get(DeploymentJob, job_id).status == "running"
+        assert session.get(Deployment, deployment_id).status == "queued"
+
+
+@pytest.mark.parametrize("operation", ["heartbeat", "cancel", "complete", "retry"])
+def test_connection_loss_does_not_commit_worker_operation(worker_database, operation):
+    engine, job_id, deployment_id = worker_database
+    with Session(engine) as session:
+        worker = DeploymentWorker(session, "worker-a")
+        _, token = worker.claim()
+        pid = session.scalar(text("SELECT pg_backend_pid()"))
+        with engine.begin() as killer:
+            assert killer.scalar(text("SELECT pg_terminate_backend(:pid)"), {"pid": pid})
+        with pytest.raises(OperationalError):
+            if operation == "heartbeat":
+                worker.heartbeat(job_id, token)
+            elif operation == "cancel":
+                worker.cancel(job_id)
+            elif operation == "complete":
+                worker.complete(job_id, token, True)
+            else:
+                worker._guarded(job_id, token, {"status": "retry_wait"})
+    with Session(engine) as session:
+        assert session.get(DeploymentJob, job_id).status == "running"
+        assert session.get(Deployment, deployment_id).status == "queued"
+
+
+def test_build_provenance_is_idempotent_and_fenced(worker_database):
+    engine, job_id, deployment_id = worker_database
+    digest = "sha256:" + "a" * 64
+    with Session(engine) as session:
+        _, token = DeploymentWorker(session, "builder-a").claim()
+        arguments = dict(
+            job_id=job_id,
+            lease_owner="builder-a",
+            lease_token=token,
+            image_digest=digest,
+            railpack_version="0.43.0",
+            buildkit_version="v0.24.0",
+        )
+        artifact = record_build_artifact(session, **arguments)
+        assert record_build_artifact(session, **arguments).id == artifact.id
+        deployment = session.get(Deployment, deployment_id)
+        assert artifact.source_commit_sha == deployment.source_commit_sha
+        assert artifact.configuration_revision == deployment.configuration_revision
+        with pytest.raises(ValueError):
+            record_build_artifact(session, **{**arguments, "image_digest": "sha256:" + "b" * 64})
+        with pytest.raises(LeaseLost):
+            record_build_artifact(session, **{**arguments, "lease_owner": "builder-b"})
+    with Session(engine) as session:
+        artifacts = session.scalars(
+            select(BuildArtifact).where(BuildArtifact.deployment_id == deployment_id)
+        ).all()
+        assert len(artifacts) == 1

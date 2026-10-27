@@ -35,6 +35,47 @@ class Settings(BaseSettings):
     worker_max_attempts: int = 3
     worker_shutdown_grace_seconds: int = 20
     worker_concurrency: int = 1
+    worker_retry_backoff_seconds: float = 1.0
+    worker_executor_mode: Literal["simulated", "controlled-probe", "fixture-build"] = "simulated"
+    executor_socket: str = ""
+    executor_key_file: str = ""
+    executor_fixture: Literal["python", "node", "go", "buildkit-fail", "buildkit-cancel"] = "python"
+
+    @model_validator(mode="after")
+    def safe_executor(self):
+        if self.worker_executor_mode in {"controlled-probe", "fixture-build"}:
+            if self.worker_executor_mode == "controlled-probe" and self.environment != "test":
+                raise ValueError("Controlled probes require the test environment")
+            if not self.executor_socket.startswith("/") or not self.executor_key_file.startswith(
+                "/"
+            ):
+                raise ValueError("Executor socket and key must be absolute paths")
+            if self.worker_executor_mode == "controlled-probe" and self.executor_fixture in {
+                "buildkit-fail",
+                "buildkit-cancel",
+            }:
+                raise ValueError("BuildKit fixtures require the trusted fixture executor")
+        return self
+
+    @model_validator(mode="after")
+    def safe_worker_timing(self):
+        if not 0.1 <= self.worker_poll_interval_seconds <= 60:
+            raise ValueError("worker poll interval must be between 0.1 and 60 seconds")
+        if not 3 <= self.worker_lease_seconds <= 3600:
+            raise ValueError("worker lease must be between 3 and 3600 seconds")
+        if not 0.5 <= self.worker_heartbeat_interval_seconds < self.worker_lease_seconds / 3:
+            raise ValueError(
+                "worker heartbeat must be at least 0.5 seconds and below one third of the lease"
+            )
+        if not 1 <= self.worker_max_attempts <= 10:
+            raise ValueError("worker attempts must be between 1 and 10")
+        if self.worker_concurrency != 1:
+            raise ValueError("only one worker thread per process is supported")
+        if not 0.1 <= self.worker_retry_backoff_seconds <= 300:
+            raise ValueError("worker backoff must be between 0.1 and 300 seconds")
+        if not 1 <= self.worker_shutdown_grace_seconds <= 300:
+            raise ValueError("worker shutdown grace must be between 1 and 300 seconds")
+        return self
 
     @field_validator("browser_origin")
     @classmethod
@@ -79,3 +120,25 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+class ExecutorSettings(BaseSettings):
+    """Executor-only configuration; never receives API or migration credentials."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="LAVA_EXECUTOR_", extra="ignore", hide_input_in_errors=True
+    )
+    database_url: SecretStr
+    database_role: str = "lava_executor"
+
+    @model_validator(mode="after")
+    def runtime_database(self):
+        url = make_url(self.database_url.get_secret_value())
+        if (
+            url.drivername != "postgresql+psycopg"
+            or not url.host
+            or not url.database
+            or url.username != self.database_role
+        ):
+            raise ValueError("Executor requires its dedicated PostgreSQL role")
+        return self

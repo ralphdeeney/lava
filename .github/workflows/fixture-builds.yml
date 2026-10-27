@@ -1,0 +1,102 @@
+name: Trusted fixture builds
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  worker-prerequisites:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.9-bookworm@sha256:47f917f7409eacd22fc5dfb1dee634e1b55cf0c01d1a7eb701be2227a03e0641
+        env:
+          POSTGRES_USER: lava
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: lava_test
+        ports: ["127.0.0.1:5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U lava -d lava_test"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      LAVA_INTEGRATION: "1"
+      LAVA_TEST_DATABASE_RESET: "1"
+      LAVA_DATABASE_URL: postgresql+psycopg://lava:ci-only-password@127.0.0.1:5432/lava_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.23'
+          python-version: '3.13.5'
+      - run: uv sync --project apps/api --locked
+      - name: Apply database migrations
+        working-directory: apps/api
+        run: uv run --locked alembic upgrade head
+      - name: Verify worker prerequisites against PostgreSQL
+        run: >-
+          uv run --project apps/api --locked python scripts/run_pytest.py
+          --cwd apps/api --junit test-results/worker-reliability.xml
+          -- tests/test_worker_reliability.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: worker-prerequisite-evidence-${{ github.sha }}
+          path: test-results/worker-reliability.xml
+          retention-days: 7
+  fixture-builds:
+    needs: worker-prerequisites
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      LAVA_TRUSTED_FIXTURE_CI: "1"
+      LAVA_DATABASE_URL: postgresql+psycopg://lava:ci-only-password@127.0.0.1:5432/lava_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: docker/setup-docker-action@v4
+        with:
+          daemon-config: |
+            {"features":{"containerd-snapshotter":true}}
+      - name: Start disposable provenance database
+        run: >-
+          docker run -d --name lava-build-provenance
+          --tmpfs /var/lib/postgresql/data:rw,size=256m
+          -e POSTGRES_USER=lava -e POSTGRES_PASSWORD=ci-only-password
+          -e POSTGRES_DB=lava_test -p 127.0.0.1:5432:5432
+          postgres:17.9-bookworm@sha256:47f917f7409eacd22fc5dfb1dee634e1b55cf0c01d1a7eb701be2227a03e0641
+      - name: Wait for provenance database
+        run: |
+          for attempt in {1..30}; do
+            if docker exec lava-build-provenance pg_isready -U lava -d lava_test >/dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.23'
+          python-version: '3.13.5'
+      - run: uv sync --project apps/api --locked
+      - name: Apply provenance migration
+        working-directory: apps/api
+        run: uv run --locked alembic upgrade head
+      - name: Build audited Python, Node and Go fixtures
+        run: uv run --project apps/api --locked python scripts/verify_executor_fixture_builds.py
+      - name: Stop owned provenance database
+        if: always()
+        run: |
+          if docker ps -aq --filter name='^/lava-build-provenance$' | grep -q .; then
+            docker rm -f lava-build-provenance
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trusted-fixture-build-evidence-${{ github.sha }}
+          path: test-results/fixture-builds.json
+          retention-days: 7

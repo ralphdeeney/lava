@@ -386,6 +386,28 @@ class DeploymentJob(Base):
     )
 
 
+class BuildArtifact(Base):
+    __tablename__ = "build_artifacts"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    deployment_id: Mapped[str] = mapped_column(
+        ForeignKey("deployments.id", ondelete="RESTRICT"), nullable=False
+    )
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_commit_sha: Mapped[str] = mapped_column(String(64), nullable=False)
+    configuration_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    railpack_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    buildkit_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    image_digest: Mapped[str] = mapped_column(String(71), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "attempt", name="uq_build_artifact_attempt"),
+        CheckConstraint("attempt >= 1", name="ck_build_artifact_attempt"),
+        CheckConstraint("image_digest ~ '^sha256:[0-9a-f]{64}$'", name="ck_build_artifact_digest"),
+    )
+
+
 class PasswordAccount(Base):
     __tablename__ = "password_accounts"
     user_id: Mapped[str] = mapped_column(
@@ -424,3 +446,48 @@ class LoginAttempt(Base):
     )
     attempts: Mapped[int] = mapped_column(Integer, nullable=False)
     __table_args__ = (CheckConstraint("attempts > 0", name="ck_login_attempts_positive"),)
+
+
+class BuildExecution(Base):
+    __tablename__ = "build_executions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("deployment_jobs.id", ondelete="RESTRICT"), nullable=False
+    )
+    deployment_id: Mapped[str] = mapped_column(
+        ForeignKey("deployments.id", ondelete="RESTRICT"), nullable=False
+    )
+    claim_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_commit_sha: Mapped[str] = mapped_column(String(40), nullable=False)
+    configuration_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    fixture: Mapped[str] = mapped_column(String(20), nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, server_default="controlled-probe")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="UNKNOWN")
+    image_digest: Mapped[str | None] = mapped_column(String(71))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    __table_args__ = (
+        UniqueConstraint("job_id", "claim_generation", name="uq_build_execution_claim"),
+        Index("ix_build_executions_job", "job_id"),
+        CheckConstraint(
+            "kind IN ('controlled-probe','fixture-build')", name="ck_build_execution_kind"
+        ),
+        CheckConstraint(
+            "status IN ('UNKNOWN','RUNNING','COMPLETED','CANCELLED','FAILED')",
+            name="ck_build_execution_status",
+        ),
+    )
+
+
+class BuildRequestNonce(Base):
+    __tablename__ = "build_request_nonces"
+    nonce_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    execution_id: Mapped[str] = mapped_column(
+        ForeignKey("build_executions.id", ondelete="RESTRICT"), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (Index("ix_build_request_nonces_expiry", "expires_at"),)

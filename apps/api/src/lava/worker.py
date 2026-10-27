@@ -15,7 +15,9 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from lava.application.deployments import DeploymentService
-from lava.db.base import Deployment, DeploymentJob
+from lava.application.executor_client import ExecutionUncertain
+from lava.core.settings import Settings, get_settings
+from lava.db.base import BuildExecution, Deployment, DeploymentJob
 
 log = structlog.get_logger()
 
@@ -45,12 +47,20 @@ class SimulatedExecutor:
 
 class DeploymentWorker:
     def __init__(
-        self, session: Session, worker_id: str, lease_seconds: int = 60, max_attempts: int = 3
+        self,
+        session: Session,
+        worker_id: str,
+        lease_seconds: int = 60,
+        max_attempts: int = 3,
+        heartbeat_interval: float | None = None,
+        retry_backoff: float = 1.0,
     ):
         self.session = session
         self.worker_id = worker_id
         self.lease_seconds = lease_seconds
         self.max_attempts = max_attempts
+        self.heartbeat_interval = heartbeat_interval or lease_seconds / 3
+        self.retry_backoff = retry_backoff
 
     def claim(self) -> tuple[DeploymentJob, str] | None:
         now = datetime.now(UTC)
@@ -64,6 +74,14 @@ class DeploymentWorker:
                     ),
                     (DeploymentJob.status == "running") & (DeploymentJob.leased_until < now),
                 )
+            )
+            .where(
+                ~select(BuildExecution.id)
+                .where(
+                    BuildExecution.job_id == DeploymentJob.id,
+                    BuildExecution.status.in_(["RUNNING", "UNKNOWN"]),
+                )
+                .exists()
             )
             .order_by(DeploymentJob.priority.desc(), DeploymentJob.available_at, DeploymentJob.id)
             .with_for_update(skip_locked=True)
@@ -136,7 +154,9 @@ class DeploymentWorker:
             self.session.rollback()
             raise
 
-    def complete(self, job_id: str, token: str, success: bool) -> None:
+    def complete(
+        self, job_id: str, token: str, success: bool, *, build_result: dict | None = None
+    ) -> None:
         try:
             job = self.session.scalar(
                 select(DeploymentJob).where(DeploymentJob.id == job_id).with_for_update()
@@ -156,11 +176,38 @@ class DeploymentWorker:
             deployment = self.session.get(Deployment, job.deployment_id)
             if deployment is None:
                 raise LeaseLost("deployment not found")
+            if build_result is not None and not job.cancellation_requested_at:
+                from lava.application.build_artifacts import record_build_artifact
+
+                execution = self.session.get(BuildExecution, build_result["execution_id"])
+                if (
+                    execution is None
+                    or execution.job_id != job.id
+                    or execution.claim_generation != job.lease_generation
+                    or execution.kind != "fixture-build"
+                    or execution.status != "COMPLETED"
+                    or execution.image_digest != build_result["image_digest"]
+                ):
+                    raise LeaseLost("Build result does not belong to the current claim")
+                record_build_artifact(
+                    self.session,
+                    job_id=job.id,
+                    lease_owner=self.worker_id,
+                    lease_token=token,
+                    image_digest=execution.image_digest,
+                    railpack_version="0.43.0",
+                    buildkit_version="v0.34.0",
+                    commit=False,
+                )
             targets = (
                 ["cancelled"]
                 if job.cancellation_requested_at
                 else (
-                    ["building", "built", "deploying", "verifying", "active"]
+                    (
+                        ["building", "built"]
+                        if build_result is not None
+                        else ["building", "built", "deploying", "verifying", "active"]
+                    )
                     if success
                     else ["failed"]
                 )
@@ -185,18 +232,22 @@ class DeploymentWorker:
             self.session.rollback()
             raise
 
-    def process_once(self, executor: SimulatedExecutor | None = None) -> bool:
+    def process_once(
+        self, executor: SimulatedExecutor | None = None, *, executor_factory=None
+    ) -> bool:
         claimed = self.claim()
         if claimed is None:
             return False
         job, token = claimed
+        if executor_factory is not None:
+            executor = executor_factory(job, self.session.get(Deployment, job.deployment_id), token)
         executor = executor or SimulatedExecutor()
         stop_heartbeat = threading.Event()
         lease_lost = threading.Event()
         engine = self.session.get_bind()
 
         def renew_lease() -> None:
-            interval = max(0.1, self.lease_seconds / 3)
+            interval = self.heartbeat_interval
             while not stop_heartbeat.wait(interval):
                 try:
                     with Session(engine) as heartbeat_session:
@@ -224,7 +275,11 @@ class DeploymentWorker:
                     is not None
                 )
             )
-            if lease_lost.is_set():
+            # Resolve an in-flight renewal before publishing an outcome. Otherwise
+            # its database failure can be observed only after completion commits.
+            stop_heartbeat.set()
+            heartbeat_thread.join(timeout=max(1, self.lease_seconds / 3 + 1))
+            if heartbeat_thread.is_alive() or lease_lost.is_set():
                 raise LeaseLost("heartbeat failed or lease was reclaimed")
             if outcome == "cancelled":
                 self.cancel(job.id)
@@ -232,7 +287,7 @@ class DeploymentWorker:
             elif outcome == "retryable_failure" and job.attempt_count < min(
                 job.max_attempts, self.max_attempts
             ):
-                delay = min(300, 2 ** max(0, job.attempt_count - 1))
+                delay = min(300, self.retry_backoff * 2 ** max(0, job.attempt_count - 1))
                 self._guarded(
                     job.id,
                     token,
@@ -242,29 +297,70 @@ class DeploymentWorker:
                         "last_error_code": "simulated_retryable",
                     },
                 )
+            elif outcome == "built":
+                self.complete(job.id, token, True, build_result=executor.result)
             else:
                 self.complete(job.id, token, outcome == "success")
         except LeaseLost:
             log.warning("worker_lease_lost", job_id=job.id, worker_id=self.worker_id)
+        except ExecutionUncertain:
+            self.session.rollback()
+            log.warning("worker_execution_uncertain", job_id=job.id, worker_id=self.worker_id)
         finally:
             stop_heartbeat.set()
             heartbeat_thread.join(timeout=max(1, self.lease_seconds / 3 + 1))
         return True
 
 
-def run_worker(session_factory: Callable[[], Session], worker_id: str) -> None:
-    stop = False
+def run_worker(
+    session_factory: Callable[[], Session], worker_id: str, settings: Settings | None = None
+) -> None:
+    settings = settings or get_settings()
+    stop = threading.Event()
 
     def request_stop(*_args) -> None:
-        nonlocal stop
-        stop = True
+        stop.set()
 
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
-    while not stop:
-        with session_factory() as session:
-            if not DeploymentWorker(session, worker_id).process_once():
-                time.sleep(1)
+    executor_factory = None
+    if settings.worker_executor_mode in {"controlled-probe", "fixture-build"}:
+        from pathlib import Path
+
+        from lava.application.executor_client import SocketExecutor
+        from lava.executor import load_key
+
+        key = load_key(Path(settings.executor_key_file))
+
+        def executor_factory(job, deployment, token):
+            return SocketExecutor(
+                Path(settings.executor_socket),
+                key,
+                job,
+                deployment,
+                token,
+                settings.executor_fixture,
+                mode=settings.worker_executor_mode,
+            )
+
+    while not stop.is_set():
+        try:
+            with session_factory() as session:
+                processed = DeploymentWorker(
+                    session,
+                    worker_id,
+                    settings.worker_lease_seconds,
+                    settings.worker_max_attempts,
+                    settings.worker_heartbeat_interval_seconds,
+                    settings.worker_retry_backoff_seconds,
+                ).process_once(executor_factory=executor_factory)
+            if not processed:
+                stop.wait(settings.worker_poll_interval_seconds)
+        except Exception as error:
+            log.warning(
+                "worker_database_unavailable", worker_id=worker_id, error_type=type(error).__name__
+            )
+            stop.wait(settings.worker_poll_interval_seconds)
 
 
 if __name__ == "__main__":
@@ -275,4 +371,4 @@ if __name__ == "__main__":
 
     settings = get_settings()
     engine = engine_for_url(settings.database_url.get_secret_value())
-    run_worker(lambda: Session(engine), f"worker-{uuid4().hex[:12]}")
+    run_worker(lambda: Session(engine), f"worker-{uuid4().hex[:12]}", settings)
