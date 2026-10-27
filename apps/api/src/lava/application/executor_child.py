@@ -6,6 +6,7 @@ as a command. Cancellation uses an owned marker rather than a recovered PID.
 
 import json
 import os
+import re
 import resource
 import signal
 import subprocess
@@ -39,7 +40,11 @@ def stop_owned_buildkit() -> bool:
 
 
 def write_receipt(
-    directory: Path, status: str, spec: dict, failure_code: str | None = None
+    directory: Path,
+    status: str,
+    spec: dict,
+    failure_code: str | None = None,
+    failure_detail: str | None = None,
 ) -> None:
     temporary = directory / "result.tmp"
     with temporary.open("x") as stream:
@@ -50,6 +55,8 @@ def write_receipt(
         }
         if failure_code is not None:
             receipt["failure_code"] = failure_code
+        if failure_detail:
+            receipt["failure_detail"] = failure_detail[-4000:]
         if status == "COMPLETED" and spec.get("kind") == "fixture-build":
             receipt["artifact"] = json.loads((directory / "artifact.json").read_text())
         json.dump(receipt, stream)
@@ -77,12 +84,14 @@ def main() -> None:
 
     signal.signal(signal.SIGTERM, cancel)
     signal.signal(signal.SIGINT, cancel)
+    stderr_path = directory / "stderr.log"
+    stderr_stream = stderr_path.open("w", encoding="utf-8")
     process = subprocess.Popen(
         spec["argv"],
         start_new_session=True,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=stderr_stream,
         env={
             "PATH": os.defpath,
             "LANG": "C.UTF-8",
@@ -115,6 +124,7 @@ def main() -> None:
     deadline = time.monotonic() + spec["timeout"]
     status = "UNKNOWN"
     failure_code = None
+    failure_detail = None
     try:
         while True:
             # WNOWAIT reserves the leader PID until the entire owned group is killed.
@@ -141,13 +151,20 @@ def main() -> None:
         except ProcessLookupError:
             pass
         process.wait(timeout=2)
+        stderr_stream.close()
+        if status == "FAILED":
+            failure_detail = re.sub(
+                r"(?i)(password|secret|token|authorization|cookie)\s*[=:]\s*\S+",
+                r"\1=<redacted>",
+                stderr_path.read_text(errors="replace")[-4000:],
+            ).strip()
         if spec.get("kind") == "fixture-build" and status != "COMPLETED":
             # The Docker client exit alone does not terminate daemon-side work.
             # This builder is created solely for this disposable verifier.
             if not stop_owned_buildkit():
                 status = "UNKNOWN"
                 failure_code = "builder_stop_unconfirmed"
-        write_receipt(directory, status, spec, failure_code)
+        write_receipt(directory, status, spec, failure_code, failure_detail)
 
 
 if __name__ == "__main__":

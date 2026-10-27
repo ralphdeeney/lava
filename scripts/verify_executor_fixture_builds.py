@@ -410,11 +410,20 @@ def main():
                                 )
                             )
                             early_deployment = db.get(Deployment, deployment_id)
+                        receipt = (
+                            runtime / "processes" / early_execution.id / "result.json"
+                        )
+                        receipt_detail = (
+                            receipt.read_text(errors="replace")[-4000:]
+                            if receipt.exists()
+                            else "no receipt"
+                        )
                         raise RuntimeError(
                             "Long-running fixture exited before BuildKit execution: "
                             f"returncode={worker.returncode} job={early_job.status} "
                             f"deployment={early_deployment.status} "
                             f"execution={early_execution.status if early_execution else 'missing'}; "
+                            f"receipt={receipt_detail}; "
                             + re.sub(
                                 r"(?i)(password|secret|token|key)=\S+",
                                 r"\1=<redacted>",
