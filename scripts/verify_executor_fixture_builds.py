@@ -596,10 +596,12 @@ if __name__ == "__main__":
             r"(?i)(password|token|secret|key)\s*[=:]\s*\S+",
             r"\1=[REDACTED]",
             str(error),
-        )[:400]
-        print(
-            f"::error::Trusted executor fixture verification failed "
-            f"({type(error).__name__}): {detail}",
-            flush=True,
+        )[-12000:]
+        output = ROOT / "test-results/fixture-builds.json"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            json.dumps({"status": "failed", "error": detail}, indent=2) + "\n"
         )
+        for line in detail.splitlines()[-80:]:
+            print(f"::error::{line[:500]}", flush=True)
         raise SystemExit(1) from None
