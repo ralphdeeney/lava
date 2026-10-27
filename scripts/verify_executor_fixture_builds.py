@@ -255,6 +255,17 @@ def main():
                 ],
                 timeout=120,
             )
+            run(
+                [
+                    "docker",
+                    "buildx",
+                    "inspect",
+                    "--builder",
+                    BUILDER_NAME,
+                    "--bootstrap",
+                ],
+                timeout=120,
+            )
             builder_created = True
 
         runtime = Path(tempfile.mkdtemp(prefix="lava-build-executor-"))
