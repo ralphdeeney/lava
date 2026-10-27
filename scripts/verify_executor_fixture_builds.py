@@ -226,24 +226,8 @@ def main():
         builder_created = True
 
         def ensure_builder() -> None:
-            """Keep the verifier's single owned builder available between cases."""
+            """Recreate the single owned builder between terminal test cases."""
             nonlocal builder_created
-            inspected = subprocess.run(
-                [
-                    "docker",
-                    "buildx",
-                    "inspect",
-                    "--builder",
-                    BUILDER_NAME,
-                    "--bootstrap",
-                ],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=30,
-                check=False,
-            )
-            if inspected.returncode == 0:
-                return
             subprocess.run(
                 ["docker", "buildx", "rm", "--force", BUILDER_NAME],
                 stdout=subprocess.DEVNULL,
